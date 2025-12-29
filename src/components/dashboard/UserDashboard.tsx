@@ -729,9 +729,36 @@ const UserDashboard = () => {
     enabled: !!user?.id
   });
 
+  // Fetch user profiles for name lookup
+  const { data: userProfiles } = useQuery({
+    queryKey: ['all-user-profiles'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name');
+      if (error) throw error;
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  // Helper to convert UUID to user name
+  const getDisplayName = (value: any): string => {
+    if (!value || value === 'empty' || value === null) return 'empty';
+    if (typeof value !== 'string') return String(value);
+    
+    // Check if it's a UUID pattern
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidPattern.test(value)) {
+      const profile = userProfiles?.find(p => p.id === value);
+      return profile?.full_name || 'Unknown User';
+    }
+    return value;
+  };
+
   // Fetch recent activities
   const { data: recentActivities } = useQuery({
-    queryKey: ['user-recent-activities', user?.id],
+    queryKey: ['user-recent-activities', user?.id, userProfiles],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('security_audit_log')
@@ -752,8 +779,8 @@ const UserDashboard = () => {
           if (changedFields.length > 0) {
             const fieldSummary = changedFields.slice(0, 2).map(field => {
               const change = details.field_changes[field];
-              const oldVal = change?.old ?? 'empty';
-              const newVal = change?.new ?? 'empty';
+              const oldVal = getDisplayName(change?.old ?? 'empty');
+              const newVal = getDisplayName(change?.new ?? 'empty');
               return `${field}: "${oldVal}" → "${newVal}"`;
             }).join(', ');
             detailedSubject = `Updated ${log.resource_type} - ${fieldSummary}${changedFields.length > 2 ? ` (+${changedFields.length - 2} more)` : ''}`;
@@ -788,7 +815,7 @@ const UserDashboard = () => {
         };
       });
     },
-    enabled: !!user?.id
+    enabled: !!user?.id && !!userProfiles
   });
 
   const formatCurrency = (amount: number) => {
