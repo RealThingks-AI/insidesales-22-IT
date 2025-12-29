@@ -1414,17 +1414,6 @@ const UserDashboard = () => {
                   <span className="md:hidden">Edit mode</span>
                 </p>
               </div>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="sm" onClick={handleResetToDefault} className="gap-2">
-                      <RotateCcw className="w-4 h-4" />
-                      <span className="hidden sm:inline">Reset</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Reset to default layout</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="gap-2">
