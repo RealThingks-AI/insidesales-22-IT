@@ -347,4 +347,42 @@ All colors MUST be HSL.
   .link-primary {
     @apply text-primary hover:text-primary/80 hover:underline transition-colors cursor-pointer;
   }
+
+  /* Skeleton shimmer animation */
+  .skeleton-shimmer {
+    @apply bg-muted/60 rounded-lg relative overflow-hidden;
+  }
+  
+  .skeleton-shimmer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--muted) / 0.4),
+      transparent
+    );
+    animation: shimmer 1.5s infinite;
+  }
+  
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Widget card base styling */
+  .widget-card {
+    @apply bg-card rounded-lg border border-border shadow-sm hover:shadow-md transition-shadow;
+  }
+
+  /* Dashboard grid consistent styling */
+  .dashboard-widget {
+    @apply h-full overflow-hidden flex flex-col animate-fade-in;
+  }
 }
