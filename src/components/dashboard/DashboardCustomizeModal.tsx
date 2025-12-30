@@ -4,15 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
-  GripVertical, FileText, Users, Briefcase, Clock, Zap, BarChart3, Calendar, Activity, Bell, 
-  Mail, Building2, ListTodo, CalendarClock, TrendingUp, ClipboardList
+  GripVertical, FileText, Users, Briefcase, Zap, Calendar, Activity, Bell, 
+  Mail, Building2, ListTodo, CalendarClock, ClipboardList
 } from "lucide-react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 
 export type WidgetKey = 
-  | "leads" | "contacts" | "deals" | "actionItems" | "quickActions" 
-  | "leadStatus" | "upcomingMeetings" | "recentActivities" | "taskReminders" | "emailStats"
-  | "accountsSummary" | "myPipeline" | "weeklySummary" | "followUpsDue" | "todaysAgenda";
+  | "leads" | "contacts" | "deals" | "quickActions" 
+  | "upcomingMeetings" | "recentActivities" | "taskReminders" | "emailStats"
+  | "accountsSummary" | "weeklySummary" | "followUpsDue" | "todaysAgenda";
 
 export interface WidgetLayout {
   x: number;
@@ -40,20 +40,17 @@ const DEFAULT_WIDGETS: DashboardWidget[] = [
   { key: "deals", label: "My Deals", icon: <Briefcase className="w-4 h-4" />, visible: true, defaultLayout: { x: 6, y: 0, w: 3, h: 2 } },
   { key: "accountsSummary", label: "Accounts Summary", icon: <Building2 className="w-4 h-4" />, visible: true, defaultLayout: { x: 9, y: 0, w: 3, h: 2 } },
   
-  // Row 2: Action items + Quick Actions + Pipeline
-  { key: "actionItems", label: "Action Items", icon: <Clock className="w-4 h-4" />, visible: true, defaultLayout: { x: 0, y: 2, w: 4, h: 2 } },
-  { key: "quickActions", label: "Quick Actions", icon: <Zap className="w-4 h-4" />, visible: true, defaultLayout: { x: 4, y: 2, w: 4, h: 2 } },
-  { key: "myPipeline", label: "My Pipeline", icon: <TrendingUp className="w-4 h-4" />, visible: true, defaultLayout: { x: 8, y: 2, w: 4, h: 2 } },
+  // Row 2: Quick Actions
+  { key: "quickActions", label: "Quick Actions", icon: <Zap className="w-4 h-4" />, visible: true, defaultLayout: { x: 0, y: 2, w: 6, h: 2 } },
   
   // Row 3: Today's Agenda + Upcoming Meetings + Task Reminders
   { key: "todaysAgenda", label: "Today's Agenda", icon: <CalendarClock className="w-4 h-4" />, visible: true, defaultLayout: { x: 0, y: 4, w: 4, h: 3 } },
   { key: "upcomingMeetings", label: "Upcoming Meetings", icon: <Calendar className="w-4 h-4" />, visible: true, defaultLayout: { x: 4, y: 4, w: 4, h: 3 } },
   { key: "taskReminders", label: "Task Reminders", icon: <Bell className="w-4 h-4" />, visible: true, defaultLayout: { x: 8, y: 4, w: 4, h: 3 } },
   
-  // Row 4: Recent Activities + Lead Status + Email Stats
-  { key: "recentActivities", label: "Recent Activities", icon: <Activity className="w-4 h-4" />, visible: true, defaultLayout: { x: 0, y: 7, w: 4, h: 3 } },
-  { key: "leadStatus", label: "Lead Status Overview", icon: <BarChart3 className="w-4 h-4" />, visible: true, defaultLayout: { x: 4, y: 7, w: 4, h: 3 } },
-  { key: "emailStats", label: "Email Statistics", icon: <Mail className="w-4 h-4" />, visible: true, defaultLayout: { x: 8, y: 7, w: 4, h: 3 } },
+  // Row 4: Recent Activities + Email Stats
+  { key: "recentActivities", label: "Recent Activities", icon: <Activity className="w-4 h-4" />, visible: true, defaultLayout: { x: 0, y: 7, w: 6, h: 3 } },
+  { key: "emailStats", label: "Email Statistics", icon: <Mail className="w-4 h-4" />, visible: true, defaultLayout: { x: 6, y: 7, w: 6, h: 3 } },
   
   // Row 5: Weekly Summary + Follow-Ups Due
   { key: "weeklySummary", label: "Weekly Summary", icon: <ListTodo className="w-4 h-4" />, visible: true, defaultLayout: { x: 0, y: 10, w: 6, h: 2 } },

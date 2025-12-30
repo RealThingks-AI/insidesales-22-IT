@@ -5,14 +5,17 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { 
-  Users, FileText, Briefcase, TrendingUp, Clock, Plus, Settings2, Calendar, Activity, Bell, AlertCircle, Info, 
-  Mail, Building2, ListTodo, CalendarClock, ClipboardList, Check, X
+  Users, FileText, Briefcase, Plus, Settings2, Calendar, Activity, Bell, 
+  Mail, Building2, ListTodo, CalendarClock, ClipboardList, Check, X, TrendingUp, TrendingDown, Minus, User
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { useUserRole } from "@/hooks/useUserRole";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { WidgetKey, WidgetLayoutConfig, DEFAULT_WIDGETS } from "./DashboardCustomizeModal";
 import { ResizableDashboard } from "./ResizableDashboard";
 import { toast } from "sonner";
 import { format, isBefore, addDays, startOfWeek, endOfWeek, isToday } from "date-fns";
+import { getMeetingStatus } from "@/utils/meetingStatus";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -79,6 +82,7 @@ const compactLayoutsUtil = (layouts: WidgetLayoutConfig, visibleKeys: WidgetKey[
 
 const UserDashboard = () => {
   const { user } = useAuth();
+  const { isAdmin } = useUserRole();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isResizeMode, setIsResizeMode] = useState(false);
@@ -107,12 +111,30 @@ const UserDashboard = () => {
   useEffect(() => {
     const updateWidth = () => {
       if (containerRef.current) {
-        setContainerWidth(containerRef.current.offsetWidth - 48);
+        // Get computed styles to account for padding
+        const styles = getComputedStyle(containerRef.current);
+        const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+        const paddingRight = parseFloat(styles.paddingRight) || 0;
+        // Use inner width (excluding padding) for accurate grid sizing
+        const width = containerRef.current.clientWidth - paddingLeft - paddingRight;
+        setContainerWidth(Math.max(320, width));
       }
     };
-    updateWidth();
+    
+    // ResizeObserver for container size changes
+    const observer = new ResizeObserver(updateWidth);
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+    
+    // Also listen to window resize for viewport changes
     window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
+    updateWidth();
+    
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateWidth);
+    };
   }, []);
   
   const { data: userName } = useQuery({
@@ -140,7 +162,7 @@ const UserDashboard = () => {
       if (!user?.id) return null;
       const { data, error } = await supabase
         .from('dashboard_preferences')
-        .select('visible_widgets, card_order, layout_view')
+        .select('visible_widgets, card_order, widget_layouts, layout_view')
         .eq('user_id', user.id)
         .maybeSingle();
       if (error) throw error;
@@ -158,6 +180,12 @@ const UserDashboard = () => {
   const [widgetOrder, setWidgetOrder] = useState<WidgetKey[]>(defaultWidgetKeys);
 
   const parseWidgetLayouts = (): WidgetLayoutConfig => {
+    // Prefer new widget_layouts column (jsonb)
+    const widgetLayoutsData = (dashboardPrefs as any)?.widget_layouts;
+    if (widgetLayoutsData && typeof widgetLayoutsData === "object") {
+      return widgetLayoutsData as WidgetLayoutConfig;
+    }
+    // Fallback to legacy layout_view parsing
     if (!dashboardPrefs?.layout_view) return {};
     if (typeof dashboardPrefs.layout_view === "object") {
       return dashboardPrefs.layout_view as WidgetLayoutConfig;
@@ -169,7 +197,7 @@ const UserDashboard = () => {
           return parsed as WidgetLayoutConfig;
         }
       } catch {
-        // Legacy string value
+        // Legacy string value (e.g., "overview")
       }
     }
     return {};
@@ -213,7 +241,7 @@ const UserDashboard = () => {
     setVisibleWidgets(nextVisible);
     setWidgetOrder(nextOrder);
     setWidgetLayouts(compactedLayouts);
-  }, [user?.id, dashboardPrefs?.visible_widgets, dashboardPrefs?.card_order, dashboardPrefs?.layout_view]);
+  }, [user?.id, dashboardPrefs?.visible_widgets, dashboardPrefs?.card_order, (dashboardPrefs as any)?.widget_layouts, dashboardPrefs?.layout_view]);
 
   const savePreferencesMutation = useMutation({
     mutationFn: async ({ widgets, order, layouts }: { widgets: WidgetKey[], order: WidgetKey[], layouts: WidgetLayoutConfig }) => {
@@ -224,9 +252,9 @@ const UserDashboard = () => {
           user_id: user.id,
           visible_widgets: widgets,
           card_order: order,
-          layout_view: JSON.stringify(layouts),
+          widget_layouts: layouts,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id' })
+        } as any, { onConflict: 'user_id' })
         .select();
       if (error) throw error;
       return data;
@@ -375,33 +403,34 @@ const UserDashboard = () => {
       return {
         total: leads.length,
         new: leads.filter(l => l.lead_status === 'New').length,
-        contacted: leads.filter(l => l.lead_status === 'Contacted').length,
+        attempted: leads.filter(l => l.lead_status === 'Attempted').length,
+        followUp: leads.filter(l => l.lead_status === 'Follow-up').length,
         qualified: leads.filter(l => l.lead_status === 'Qualified').length,
-        converted: leads.filter(l => l.lead_status === 'Converted').length,
         recentLead: recentLead?.lead_name || null
       };
     },
     enabled: !!user?.id
   });
 
-  // Contacts data - enhanced
+  // Contacts data - enhanced with contact_source
   const { data: contactsData, isLoading: contactsLoading } = useQuery({
     queryKey: ['user-contacts-enhanced', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('contacts').select('id, contact_name, email, phone_no, segment, created_time').eq('created_by', user?.id);
+      const { data, error } = await supabase.from('contacts').select('id, contact_name, email, phone_no, segment, contact_source, created_time').eq('created_by', user?.id);
       if (error) throw error;
       const contacts = data || [];
-      const withEmail = contacts.filter(c => c.email).length;
-      const withPhone = contacts.filter(c => c.phone_no).length;
-      const prospects = contacts.filter(c => c.segment === 'prospect').length;
-      const customers = contacts.filter(c => c.segment === 'customer').length;
-      const recentContact = contacts.sort((a, b) => new Date(b.created_time || 0).getTime() - new Date(a.created_time || 0).getTime())[0];
-      return { total: contacts.length, withEmail, withPhone, prospects, customers, recentContact: recentContact?.contact_name || null };
+      const bySource = {
+        website: contacts.filter(c => c.contact_source?.toLowerCase() === 'website').length,
+        referral: contacts.filter(c => c.contact_source?.toLowerCase() === 'referral').length,
+        linkedin: contacts.filter(c => c.contact_source?.toLowerCase() === 'linkedin').length,
+        other: contacts.filter(c => !['website', 'referral', 'linkedin'].includes(c.contact_source?.toLowerCase() || '')).length,
+      };
+      return { total: contacts.length, bySource };
     },
     enabled: !!user?.id
   });
 
-  // Deals data - enhanced
+  // Deals data - enhanced with stages RFQ, Offered, Won, Lost
   const { data: dealsData, isLoading: dealsLoading } = useQuery({
     queryKey: ['user-deals-enhanced', user?.id],
     queryFn: async () => {
@@ -413,15 +442,6 @@ const UserDashboard = () => {
       const totalPipeline = activeDeals.reduce((sum, d) => sum + (d.total_contract_value || 0), 0);
       const wonValue = wonDeals.reduce((sum, d) => sum + (d.total_contract_value || 0), 0);
       
-      // Deals closing this month
-      const now = new Date();
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      const closingThisMonth = activeDeals.filter(d => {
-        if (!d.expected_closing_date) return false;
-        const closeDate = new Date(d.expected_closing_date);
-        return closeDate <= monthEnd && closeDate >= now;
-      });
-      
       return {
         total: userDeals.length,
         active: activeDeals.length,
@@ -429,76 +449,66 @@ const UserDashboard = () => {
         lost: userDeals.filter(d => d.stage === 'Lost').length,
         totalPipeline,
         wonValue,
-        closingThisMonth: closingThisMonth.length,
-        closingValue: closingThisMonth.reduce((sum, d) => sum + (d.total_contract_value || 0), 0),
         byStage: {
-          lead: userDeals.filter(d => d.stage === 'Lead').length,
-          qualified: userDeals.filter(d => d.stage === 'Qualified').length,
-          discussions: userDeals.filter(d => d.stage === 'Discussions').length,
+          rfq: userDeals.filter(d => d.stage === 'RFQ').length,
+          offered: userDeals.filter(d => d.stage === 'Offered').length,
+          won: wonDeals.length,
+          lost: userDeals.filter(d => d.stage === 'Lost').length,
         }
       };
     },
     enabled: !!user?.id
   });
 
-  // Accounts data - enhanced
+  // Accounts data - enhanced with status counts
   const { data: accountsData, isLoading: accountsLoading } = useQuery({
     queryKey: ['user-accounts-enhanced', user?.id],
     queryFn: async () => {
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const { data, error } = await supabase.from('accounts').select('id, company_name, segment, status, created_at, total_revenue').eq('created_by', user?.id);
       if (error) throw error;
       const accounts = data || [];
-      const newThisMonth = accounts.filter(a => new Date(a.created_at || 0) >= monthStart).length;
-      const bySegment = {
-        prospect: accounts.filter(a => a.segment === 'prospect').length,
-        customer: accounts.filter(a => a.segment === 'customer').length,
-        partner: accounts.filter(a => a.segment === 'partner').length,
+      const byStatus = {
+        new: accounts.filter(a => a.status?.toLowerCase() === 'new').length,
+        working: accounts.filter(a => a.status?.toLowerCase() === 'working').length,
+        hot: accounts.filter(a => a.status?.toLowerCase() === 'hot').length,
+        nurture: accounts.filter(a => a.status?.toLowerCase() === 'nurture').length,
       };
-      const totalRevenue = accounts.reduce((sum, a) => sum + (a.total_revenue || 0), 0);
-      return { total: accounts.length, newThisMonth, bySegment, totalRevenue };
+      return { total: accounts.length, byStatus };
     },
     enabled: !!user?.id
   });
 
-  // Action items - enhanced
-  const { data: actionItemsData, isLoading: actionItemsLoading } = useQuery({
-    queryKey: ['user-action-items-enhanced', user?.id],
-    queryFn: async () => {
-      const { data: dealItems } = await supabase.from('deal_action_items').select('id, status, due_date, next_action').eq('assigned_to', user?.id).eq('status', 'Open').order('due_date', { ascending: true }).limit(5);
-      const { data: leadItems } = await supabase.from('lead_action_items').select('id, status, due_date, next_action').eq('assigned_to', user?.id).eq('status', 'Open').order('due_date', { ascending: true }).limit(5);
-      const allItems = [...(dealItems || []), ...(leadItems || [])];
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const overdue = allItems.filter(item => item.due_date && new Date(item.due_date) < today).length;
-      const dueToday = allItems.filter(item => item.due_date && isToday(new Date(item.due_date))).length;
-      const topItems = allItems.slice(0, 3);
-      return { total: allItems.length, overdue, dueToday, topItems };
-    },
-    enabled: !!user?.id
-  });
-
-  // Upcoming meetings - enhanced
-  const { data: upcomingMeetings } = useQuery({
+  // Upcoming meetings - enhanced with status counts using getMeetingStatus for consistency
+  const { data: upcomingMeetings, isLoading: meetingsLoading } = useQuery({
     queryKey: ['user-upcoming-meetings-enhanced', user?.id],
     queryFn: async () => {
-      const now = new Date().toISOString();
-      const weekFromNow = addDays(new Date(), 7).toISOString();
       const { data, error } = await supabase
         .from('meetings')
         .select('id, subject, start_time, end_time, status, attendees')
-        .eq('created_by', user?.id)
-        .gte('start_time', now)
-        .lte('start_time', weekFromNow)
-        .order('start_time', { ascending: true })
-        .limit(5);
+        .eq('created_by', user?.id);
       if (error) throw error;
-      return (data || []).map(m => ({
-        ...m,
-        isToday: isToday(new Date(m.start_time)),
-        attendeeCount: Array.isArray(m.attendees) ? m.attendees.length : 0
-      }));
+      const meetings = data || [];
+      const now = new Date();
+      
+      // Use getMeetingStatus for consistent status calculation (same as Meetings page)
+      const byStatus = {
+        scheduled: meetings.filter(m => getMeetingStatus(m, now) === 'scheduled').length,
+        ongoing: meetings.filter(m => getMeetingStatus(m, now) === 'ongoing').length,
+        completed: meetings.filter(m => getMeetingStatus(m, now) === 'completed').length,
+        cancelled: meetings.filter(m => getMeetingStatus(m, now) === 'cancelled').length,
+      };
+      
+      // For upcoming meetings list, only show those that are scheduled or ongoing
+      const upcoming = meetings
+        .filter(m => ['scheduled', 'ongoing'].includes(getMeetingStatus(m, now)))
+        .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+        .slice(0, 5)
+        .map(m => ({
+          ...m,
+          isToday: isToday(new Date(m.start_time)),
+          attendeeCount: Array.isArray(m.attendees) ? m.attendees.length : 0
+        }));
+      return { meetings: upcoming, total: meetings.length, byStatus };
     },
     enabled: !!user?.id
   });
@@ -561,26 +571,27 @@ const UserDashboard = () => {
     enabled: !!user?.id
   });
 
-  // Task reminders
-  const { data: taskReminders } = useQuery({
+  // Task reminders with status counts
+  const { data: taskReminders, isLoading: tasksLoading } = useQuery({
     queryKey: ['user-task-reminders-enhanced', user?.id],
     queryFn: async () => {
-      const weekFromNow = format(addDays(new Date(), 7), 'yyyy-MM-dd');
-      const today = format(new Date(), 'yyyy-MM-dd');
       const { data, error } = await supabase
         .from('tasks')
         .select('id, title, due_date, priority, status')
-        .or(`assigned_to.eq.${user?.id},created_by.eq.${user?.id}`)
-        .in('status', ['open', 'in_progress'])
-        .lte('due_date', weekFromNow)
-        .order('due_date', { ascending: true })
-        .limit(10);
+        .or(`assigned_to.eq.${user?.id},created_by.eq.${user?.id}`);
       if (error) throw error;
       const tasks = data || [];
-      const overdue = tasks.filter(t => t.due_date && t.due_date < today).length;
+      const byStatus = {
+        open: tasks.filter(t => t.status === 'open').length,
+        inProgress: tasks.filter(t => t.status === 'in_progress').length,
+        completed: tasks.filter(t => t.status === 'completed').length,
+        cancelled: tasks.filter(t => t.status === 'cancelled').length,
+      };
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const overdue = tasks.filter(t => t.due_date && t.due_date < today && ['open', 'in_progress'].includes(t.status)).length;
       const dueToday = tasks.filter(t => t.due_date === today).length;
-      const highPriority = tasks.filter(t => t.priority === 'high').length;
-      return { tasks: tasks.slice(0, 5), overdue, dueToday, highPriority, total: tasks.length };
+      const highPriority = tasks.filter(t => t.priority === 'high' && ['open', 'in_progress'].includes(t.status)).length;
+      return { tasks: tasks.slice(0, 5), overdue, dueToday, highPriority, total: tasks.length, byStatus };
     },
     enabled: !!user?.id
   });
@@ -627,29 +638,89 @@ const UserDashboard = () => {
     enabled: !!user?.id
   });
 
-  // Weekly summary
+  // Weekly summary view mode state
+  const [weeklySummaryView, setWeeklySummaryView] = useState<'thisWeek' | 'allTime'>('thisWeek');
+  
+  // Recent activities toggle state (for admin only)
+  const [showAllActivities, setShowAllActivities] = useState(false);
+
+  // Weekly summary with comparison data
   const { data: weeklySummary } = useQuery({
-    queryKey: ['user-weekly-summary', user?.id],
+    queryKey: ['user-weekly-summary-enhanced', user?.id],
     queryFn: async () => {
-      const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-      const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+      const now = new Date();
+      const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
       const startStr = weekStart.toISOString();
       const endStr = weekEnd.toISOString();
       
-      const [leadsRes, contactsRes, dealsRes, meetingsRes, tasksRes] = await Promise.all([
+      // Last week dates
+      const lastWeekStart = new Date(weekStart);
+      lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+      const lastWeekEnd = new Date(weekEnd);
+      lastWeekEnd.setDate(lastWeekEnd.getDate() - 7);
+      const lastStartStr = lastWeekStart.toISOString();
+      const lastEndStr = lastWeekEnd.toISOString();
+      
+      // Fetch this week, last week, and all time in parallel
+      const [
+        // This week
+        leadsThisWeek, contactsThisWeek, accountsThisWeek, dealsThisWeek, meetingsThisWeek, tasksThisWeek,
+        // Last week
+        leadsLastWeek, contactsLastWeek, accountsLastWeek, dealsLastWeek, meetingsLastWeek, tasksLastWeek,
+        // All time
+        leadsAllTime, contactsAllTime, accountsAllTime, dealsAllTime, meetingsAllTime, tasksAllTime
+      ] = await Promise.all([
+        // This week
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_time', startStr).lte('created_time', endStr),
         supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_time', startStr).lte('created_time', endStr),
+        supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_at', startStr).lte('created_at', endStr),
         supabase.from('deals').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_at', startStr).lte('created_at', endStr),
         supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).eq('status', 'completed').gte('start_time', startStr).lte('start_time', endStr),
         supabase.from('tasks').select('id', { count: 'exact', head: true }).or(`assigned_to.eq.${user?.id},created_by.eq.${user?.id}`).eq('status', 'completed').gte('completed_at', startStr).lte('completed_at', endStr),
+        // Last week
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_time', lastStartStr).lte('created_time', lastEndStr),
+        supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_time', lastStartStr).lte('created_time', lastEndStr),
+        supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_at', lastStartStr).lte('created_at', lastEndStr),
+        supabase.from('deals').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_at', lastStartStr).lte('created_at', lastEndStr),
+        supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).eq('status', 'completed').gte('start_time', lastStartStr).lte('start_time', lastEndStr),
+        supabase.from('tasks').select('id', { count: 'exact', head: true }).or(`assigned_to.eq.${user?.id},created_by.eq.${user?.id}`).eq('status', 'completed').gte('completed_at', lastStartStr).lte('completed_at', lastEndStr),
+        // All time
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('created_by', user?.id),
+        supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id),
+        supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id),
+        supabase.from('deals').select('id', { count: 'exact', head: true }).eq('created_by', user?.id),
+        supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).eq('status', 'completed'),
+        supabase.from('tasks').select('id', { count: 'exact', head: true }).or(`assigned_to.eq.${user?.id},created_by.eq.${user?.id}`).eq('status', 'completed'),
       ]);
       
       return {
-        newLeads: leadsRes.count || 0,
-        newContacts: contactsRes.count || 0,
-        newDeals: dealsRes.count || 0,
-        meetingsCompleted: meetingsRes.count || 0,
-        tasksCompleted: tasksRes.count || 0,
+        thisWeek: {
+          leads: leadsThisWeek.count || 0,
+          contacts: contactsThisWeek.count || 0,
+          accounts: accountsThisWeek.count || 0,
+          deals: dealsThisWeek.count || 0,
+          meetings: meetingsThisWeek.count || 0,
+          tasks: tasksThisWeek.count || 0,
+        },
+        lastWeek: {
+          leads: leadsLastWeek.count || 0,
+          contacts: contactsLastWeek.count || 0,
+          accounts: accountsLastWeek.count || 0,
+          deals: dealsLastWeek.count || 0,
+          meetings: meetingsLastWeek.count || 0,
+          tasks: tasksLastWeek.count || 0,
+        },
+        allTime: {
+          leads: leadsAllTime.count || 0,
+          contacts: contactsAllTime.count || 0,
+          accounts: accountsAllTime.count || 0,
+          deals: dealsAllTime.count || 0,
+          meetings: meetingsAllTime.count || 0,
+          tasks: tasksAllTime.count || 0,
+        },
+        weekStart,
+        weekEnd,
       };
     },
     enabled: !!user?.id
@@ -678,16 +749,22 @@ const UserDashboard = () => {
   };
 
   const { data: recentActivities } = useQuery({
-    queryKey: ['user-recent-activities', user?.id, userProfiles],
+    queryKey: ['user-recent-activities', user?.id, userProfiles, showAllActivities],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('security_audit_log')
         .select('id, action, resource_type, resource_id, created_at, details, user_id')
-        .eq('user_id', user?.id)
         .in('action', ['CREATE', 'UPDATE', 'DELETE'])
         .in('resource_type', ['contacts', 'leads', 'deals', 'accounts', 'meetings', 'tasks'])
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(10);
+      
+      // Only filter by user_id if not showing all activities
+      if (!showAllActivities) {
+        query = query.eq('user_id', user?.id);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
 
       return (data || []).map(log => {
@@ -723,6 +800,7 @@ const UserDashboard = () => {
           activity_type: log.action,
           activity_date: log.created_at,
           resource_type: log.resource_type,
+          user_id: log.user_id,
         };
       });
     },
@@ -738,7 +816,7 @@ const UserDashboard = () => {
     }).format(amount);
   };
 
-  const isLoading = leadsLoading || contactsLoading || dealsLoading || actionItemsLoading || accountsLoading;
+  const isLoading = leadsLoading || contactsLoading || dealsLoading || accountsLoading;
 
   if (isLoading) {
     return (
@@ -760,42 +838,87 @@ const UserDashboard = () => {
     switch (key) {
       case "leads":
         return (
-          <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer animate-fade-in" onClick={() => !isResizeMode && navigate('/leads')}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">My Leads</CardTitle>
-              <FileText className="w-4 h-4 text-blue-600" />
+          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">My Leads</CardTitle>
+              <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setLeadModalOpen(true)}>
+                <Plus className="w-3 h-3" /> Add Lead
+              </Button>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-2xl font-bold">{leadsData?.total || 0}</div>
-              <div className="flex flex-wrap gap-1 text-xs">
-                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">{leadsData?.new || 0} New</span>
-                <span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">{leadsData?.contacted || 0} Contacted</span>
-                <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">{leadsData?.qualified || 0} Qualified</span>
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
+                <div 
+                  className="text-center p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/leads?status=New&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-blue-600 leading-tight">{leadsData?.new || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">New</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/leads?status=Attempted&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-yellow-600 leading-tight">{leadsData?.attempted || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Attempted</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-orange-50 dark:bg-orange-950/20 rounded cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/leads?status=Follow-up&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-orange-600 leading-tight">{leadsData?.followUp || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Follow-Up</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/leads?status=Qualified&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-green-600 leading-tight">{leadsData?.qualified || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Qualified</p>
+                </div>
               </div>
-              {leadsData?.recentLead && (
-                <p className="text-xs text-muted-foreground truncate">Latest: {leadsData.recentLead}</p>
-              )}
             </CardContent>
           </Card>
         );
 
       case "contacts":
         return (
-          <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer animate-fade-in" onClick={() => !isResizeMode && navigate('/contacts')}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">My Contacts</CardTitle>
-              <Users className="w-4 h-4 text-green-600" />
+          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">My Contacts</CardTitle>
+              <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setContactModalOpen(true)}>
+                <Plus className="w-3 h-3" /> Add Contact
+              </Button>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-2xl font-bold">{contactsData?.total || 0}</div>
-              <div className="flex flex-wrap gap-1 text-xs">
-                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">{contactsData?.withEmail || 0} w/ Email</span>
-                <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">{contactsData?.withPhone || 0} w/ Phone</span>
-              </div>
-              <div className="flex gap-2 text-xs text-muted-foreground">
-                <span>{contactsData?.prospects || 0} Prospects</span>
-                <span>•</span>
-                <span>{contactsData?.customers || 0} Customers</span>
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
+                <div 
+                  className="text-center p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/contacts?source=Website&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-blue-600 leading-tight">{contactsData?.bySource?.website || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Website</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-purple-50 dark:bg-purple-950/20 rounded cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/contacts?source=Referral&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-purple-600 leading-tight">{contactsData?.bySource?.referral || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Referral</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-cyan-50 dark:bg-cyan-950/20 rounded cursor-pointer hover:bg-cyan-100 dark:hover:bg-cyan-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/contacts?source=LinkedIn&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-cyan-600 leading-tight">{contactsData?.bySource?.linkedin || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">LinkedIn</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-gray-50 dark:bg-gray-950/20 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/contacts?source=Other&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-gray-600 leading-tight">{contactsData?.bySource?.other || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Other</p>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -803,123 +926,112 @@ const UserDashboard = () => {
 
       case "deals":
         return (
-          <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer animate-fade-in" onClick={() => !isResizeMode && navigate('/deals')}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">My Deals</CardTitle>
-              <Briefcase className="w-4 h-4 text-purple-600" />
+          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">My Deals</CardTitle>
+              <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && navigate('/deals')}>
+                View All
+              </Button>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold">{dealsData?.active || 0}</span>
-                <span className="text-sm text-muted-foreground">active</span>
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
+                <div 
+                  className="text-center p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/deals?stage=RFQ&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-blue-600 leading-tight">{dealsData?.byStage?.rfq || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">RFQ</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/deals?stage=Offered&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-yellow-600 leading-tight">{dealsData?.byStage?.offered || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Offered</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/deals?stage=Won&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-green-600 leading-tight">{dealsData?.byStage?.won || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Won</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-red-50 dark:bg-red-950/20 rounded cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/deals?stage=Lost&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-red-600 leading-tight">{dealsData?.byStage?.lost || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Lost</p>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-1 text-xs">
-                <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">{dealsData?.won || 0} Won</span>
-                <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">{dealsData?.lost || 0} Lost</span>
-              </div>
-              <p className="text-xs text-muted-foreground">Pipeline: {formatCurrency(dealsData?.totalPipeline || 0)}</p>
             </CardContent>
           </Card>
         );
 
       case "accountsSummary":
         return (
-          <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer animate-fade-in" onClick={() => !isResizeMode && navigate('/accounts')}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Accounts</CardTitle>
-              <Building2 className="w-4 h-4 text-indigo-600" />
+          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">My Accounts</CardTitle>
+              <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setAccountModalOpen(true)}>
+                <Plus className="w-3 h-3" /> Add Account
+              </Button>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold">{accountsData?.total || 0}</span>
-                {(accountsData?.newThisMonth || 0) > 0 && (
-                  <span className="text-xs text-green-600">+{accountsData?.newThisMonth} this month</span>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1 text-xs">
-                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">{accountsData?.bySegment?.prospect || 0} Prospect</span>
-                <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">{accountsData?.bySegment?.customer || 0} Customer</span>
-              </div>
-            </CardContent>
-          </Card>
-        );
-
-      case "actionItems":
-        return (
-          <Card className="h-full animate-fade-in">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Action Items</CardTitle>
-              <Clock className="w-4 h-4 text-orange-600" />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-2xl font-bold">{actionItemsData?.total || 0}</span>
-                <div className="flex gap-2 text-xs">
-                  {(actionItemsData?.overdue || 0) > 0 && (
-                    <span className="px-2 py-1 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 font-medium">
-                      {actionItemsData?.overdue} overdue
-                    </span>
-                  )}
-                  {(actionItemsData?.dueToday || 0) > 0 && (
-                    <span className="px-2 py-1 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
-                      {actionItemsData?.dueToday} today
-                    </span>
-                  )}
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
+                <div 
+                  className="text-center p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/accounts?status=New&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-blue-600 leading-tight">{accountsData?.byStatus?.new || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">New</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/accounts?status=Working&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-yellow-600 leading-tight">{accountsData?.byStatus?.working || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Working</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-red-50 dark:bg-red-950/20 rounded cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/accounts?status=Hot&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-red-600 leading-tight">{accountsData?.byStatus?.hot || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Hot</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/accounts?status=Nurture&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-green-600 leading-tight">{accountsData?.byStatus?.nurture || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Nurture</p>
                 </div>
               </div>
-              {actionItemsData?.topItems && actionItemsData.topItems.length > 0 && (
-                <div className="space-y-1">
-                  {actionItemsData.topItems.slice(0, 3).map((item: any) => (
-                    <div key={item.id} className="text-xs p-2 rounded bg-muted/50 truncate">
-                      {item.next_action}
-                    </div>
-                  ))}
-                </div>
-              )}
             </CardContent>
           </Card>
         );
 
       case "quickActions":
         return (
-          <Card className="h-full animate-fade-in">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
+          <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">Quick Actions</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-2">
-              <Button variant="outline" size="sm" className="justify-start gap-2" onClick={() => !isResizeMode && setLeadModalOpen(true)}>
-                <Plus className="w-3 h-3" /> Lead
-              </Button>
-              <Button variant="outline" size="sm" className="justify-start gap-2" onClick={() => !isResizeMode && setContactModalOpen(true)}>
-                <Plus className="w-3 h-3" /> Contact
-              </Button>
-              <Button variant="outline" size="sm" className="justify-start gap-2" onClick={() => !isResizeMode && setAccountModalOpen(true)}>
-                <Plus className="w-3 h-3" /> Account
-              </Button>
-              <Button variant="outline" size="sm" className="justify-start gap-2" onClick={() => !isResizeMode && setCreateMeetingModalOpen(true)}>
-                <Plus className="w-3 h-3" /> Meeting
-              </Button>
-            </CardContent>
-          </Card>
-        );
-
-      case "myPipeline":
-        return (
-          <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer animate-fade-in" onClick={() => !isResizeMode && navigate('/deals')}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">My Pipeline</CardTitle>
-              <TrendingUp className="w-4 h-4 text-emerald-600" />
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="text-2xl font-bold">{formatCurrency(dealsData?.totalPipeline || 0)}</div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">{dealsData?.active || 0} active deals</span>
-                {(dealsData?.closingThisMonth || 0) > 0 && (
-                  <span className="text-green-600 font-medium">{dealsData?.closingThisMonth} closing soon</span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-green-600 font-medium">Won: {formatCurrency(dealsData?.wonValue || 0)}</span>
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
+                <Button variant="outline" size="sm" className="justify-start gap-1.5 h-auto min-h-[28px] text-xs py-1" onClick={() => !isResizeMode && setLeadModalOpen(true)}>
+                  <Plus className="w-3 h-3 flex-shrink-0" /> Lead
+                </Button>
+                <Button variant="outline" size="sm" className="justify-start gap-1.5 h-auto min-h-[28px] text-xs py-1" onClick={() => !isResizeMode && setContactModalOpen(true)}>
+                  <Plus className="w-3 h-3 flex-shrink-0" /> Contact
+                </Button>
+                <Button variant="outline" size="sm" className="justify-start gap-1.5 h-auto min-h-[28px] text-xs py-1" onClick={() => !isResizeMode && setAccountModalOpen(true)}>
+                  <Plus className="w-3 h-3 flex-shrink-0" /> Account
+                </Button>
+                <Button variant="outline" size="sm" className="justify-start gap-1.5 h-auto min-h-[28px] text-xs py-1" onClick={() => !isResizeMode && setCreateMeetingModalOpen(true)}>
+                  <Plus className="w-3 h-3 flex-shrink-0" /> Meeting
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -927,58 +1039,146 @@ const UserDashboard = () => {
 
       case "todaysAgenda":
         const totalAgendaItems = (todaysMeetings?.length || 0) + (todaysTasks?.length || 0) + (overdueTasks?.length || 0);
+        const handleQuickCompleteTask = async (taskId: string, e: React.MouseEvent) => {
+          e.stopPropagation();
+          try {
+            await supabase.from('tasks').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', taskId);
+            queryClient.invalidateQueries({ queryKey: ['user-todays-tasks', user?.id] });
+            queryClient.invalidateQueries({ queryKey: ['user-overdue-tasks', user?.id] });
+            queryClient.invalidateQueries({ queryKey: ['user-task-reminders-enhanced', user?.id] });
+            toast.success("Task completed");
+          } catch (error) {
+            toast.error("Failed to complete task");
+          }
+        };
         return (
-          <Card className="h-full animate-fade-in">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <CalendarClock className="w-5 h-5 text-primary" />
+          <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="flex items-center gap-1.5 text-sm font-medium truncate">
+                <CalendarClock className="w-4 h-4 text-primary flex-shrink-0" />
                 Today's Agenda
               </CardTitle>
-              <span className="text-xs text-muted-foreground">{format(new Date(), 'EEE, MMM d')}</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-[9px] text-muted-foreground">{format(new Date(), 'EEE, MMM d')}</span>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => !isResizeMode && navigate('/tasks')}>
+                        <ListTodo className="w-3 h-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>View all tasks</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
               {totalAgendaItems > 0 ? (
-                <div className="space-y-3 max-h-[200px] overflow-y-auto">
-                  {(overdueTasks?.length || 0) > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-red-600 mb-1">⚠️ Overdue ({overdueTasks?.length})</p>
-                      {overdueTasks?.slice(0, 2).map((task: any) => (
-                        <div key={task.id} className="text-xs p-2 rounded bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 mb-1 truncate">
-                          {task.title}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {(todaysMeetings?.length || 0) > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Meetings ({todaysMeetings?.length})</p>
-                      {todaysMeetings?.slice(0, 2).map((meeting: any) => (
-                        <div key={meeting.id} className="text-xs p-2 rounded bg-blue-50 dark:bg-blue-900/20 mb-1 flex items-center gap-2">
-                          <Calendar className="w-3 h-3 text-blue-600" />
-                          <span className="truncate">{meeting.subject}</span>
-                          <span className="text-muted-foreground ml-auto">{format(new Date(meeting.start_time), 'HH:mm')}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {(todaysTasks?.length || 0) > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Tasks Due ({todaysTasks?.length})</p>
-                      {todaysTasks?.slice(0, 2).map((task: any) => (
-                        <div key={task.id} className="text-xs p-2 rounded bg-orange-50 dark:bg-orange-900/20 mb-1 truncate">
-                          {task.title}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <ScrollArea className="flex-1 min-h-0">
+                  <div className="space-y-1.5 pr-2">
+                    {(overdueTasks?.length || 0) > 0 && (
+                      <div>
+                        <p 
+                          className="text-[9px] font-medium text-red-600 mb-0.5 cursor-pointer hover:underline"
+                          onClick={() => !isResizeMode && navigate('/tasks?filter=overdue')}
+                        >
+                          ⚠️ Overdue ({overdueTasks?.length})
+                        </p>
+                        {overdueTasks?.slice(0, 3).map((task: any) => (
+                          <div 
+                            key={task.id} 
+                            className="text-[9px] p-1.5 rounded bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 mb-1 flex items-center gap-1 group cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                            onClick={() => { if (!isResizeMode) { setSelectedTask(task); setTaskModalOpen(true); }}}
+                          >
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button 
+                                    className="w-3.5 h-3.5 rounded border border-red-300 dark:border-red-600 hover:bg-green-500 hover:border-green-500 flex items-center justify-center flex-shrink-0 transition-colors"
+                                    onClick={(e) => handleQuickCompleteTask(task.id, e)}
+                                  >
+                                    <Check className="w-2 h-2 opacity-0 group-hover:opacity-100 text-white" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>Mark complete</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <span className="truncate flex-1">{task.title}</span>
+                            <span className="text-[8px] text-red-500 flex-shrink-0">{format(new Date(task.due_date), 'MMM d')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(todaysMeetings?.length || 0) > 0 && (
+                      <div>
+                        <p 
+                          className="text-[9px] font-medium text-muted-foreground mb-0.5 cursor-pointer hover:underline"
+                          onClick={() => !isResizeMode && navigate('/meetings')}
+                        >
+                          <Calendar className="w-2.5 h-2.5 inline mr-0.5" />
+                          Meetings ({todaysMeetings?.length})
+                        </p>
+                        {todaysMeetings?.slice(0, 3).map((meeting: any) => (
+                          <div 
+                            key={meeting.id} 
+                            className="text-[9px] p-1.5 rounded bg-blue-50 dark:bg-blue-900/20 flex items-center gap-1 mb-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                            onClick={() => { if (!isResizeMode) { setSelectedMeeting(meeting); setMeetingModalOpen(true); }}}
+                          >
+                            <Calendar className="w-2.5 h-2.5 text-blue-600 flex-shrink-0" />
+                            <span className="truncate flex-1 min-w-0 text-blue-700 dark:text-blue-300">{meeting.subject}</span>
+                            <span className="text-blue-600 font-medium flex-shrink-0">{format(new Date(meeting.start_time), 'HH:mm')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(todaysTasks?.length || 0) > 0 && (
+                      <div>
+                        <p 
+                          className="text-[9px] font-medium text-muted-foreground mb-0.5 cursor-pointer hover:underline"
+                          onClick={() => !isResizeMode && navigate('/tasks?dueDate=today')}
+                        >
+                          <ListTodo className="w-2.5 h-2.5 inline mr-0.5" />
+                          Tasks Due ({todaysTasks?.length})
+                        </p>
+                        {todaysTasks?.slice(0, 3).map((task: any) => (
+                          <div 
+                            key={task.id} 
+                            className="text-[9px] p-1.5 rounded bg-orange-50 dark:bg-orange-900/20 flex items-center gap-1 mb-1 group cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors"
+                            onClick={() => { if (!isResizeMode) { setSelectedTask(task); setTaskModalOpen(true); }}}
+                          >
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button 
+                                    className="w-3.5 h-3.5 rounded border border-orange-300 dark:border-orange-600 hover:bg-green-500 hover:border-green-500 flex items-center justify-center flex-shrink-0 transition-colors"
+                                    onClick={(e) => handleQuickCompleteTask(task.id, e)}
+                                  >
+                                    <Check className="w-2 h-2 opacity-0 group-hover:opacity-100 text-white" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>Mark complete</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <span className="truncate flex-1 text-orange-700 dark:text-orange-300">{task.title}</span>
+                            {task.priority === 'high' && <span className="text-[8px] px-1 py-0.5 rounded bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-200 flex-shrink-0">High</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
               ) : (
-                <EmptyState
-                  title="Clear day ahead"
-                  description="No meetings or tasks scheduled for today"
-                  illustration="calendar"
-                  variant="compact"
-                />
+                <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-2">
+                  <EmptyState
+                    title="Clear day ahead"
+                    description="No meetings or tasks scheduled for today"
+                    illustration="calendar"
+                    variant="compact"
+                  />
+                  <Button variant="outline" size="sm" className="text-[10px] h-6" onClick={() => { if (!isResizeMode) { setSelectedTask(null); setTaskModalOpen(true); }}}>
+                    <Plus className="w-3 h-3 mr-1" /> Add Task
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -986,208 +1186,279 @@ const UserDashboard = () => {
 
       case "upcomingMeetings":
         return (
-          <Card className="h-full animate-fade-in">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-primary" />
-                Upcoming Meetings
-              </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => !isResizeMode && navigate('/meetings')}>View All</Button>
+          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">My Meetings</CardTitle>
+              <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setCreateMeetingModalOpen(true)}>
+                <Plus className="w-3 h-3" /> Add Meeting
+              </Button>
             </CardHeader>
-            <CardContent>
-              {upcomingMeetings && upcomingMeetings.length > 0 ? (
-                <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                  {upcomingMeetings.slice(0, 4).map((meeting: any) => (
-                    <div 
-                      key={meeting.id} 
-                      className={`p-2 rounded-lg cursor-pointer transition-colors ${meeting.isToday ? 'bg-primary/10 border border-primary/20' : 'bg-muted/50 hover:bg-muted'}`}
-                      onClick={() => { if (!isResizeMode) { setSelectedMeeting(meeting); setMeetingModalOpen(true); }}}
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium truncate flex-1">{meeting.subject}</p>
-                        {meeting.isToday && <span className="text-xs px-1.5 py-0.5 rounded bg-primary text-primary-foreground ml-2">Today</span>}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                        <span>{format(new Date(meeting.start_time), 'EEE, MMM d • HH:mm')}</span>
-                        {meeting.attendeeCount > 0 && <span>• {meeting.attendeeCount} attendee{meeting.attendeeCount > 1 ? 's' : ''}</span>}
-                      </div>
-                    </div>
-                  ))}
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
+                <div 
+                  className="text-center p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/meetings?status=scheduled&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-blue-600 leading-tight">{upcomingMeetings?.byStatus?.scheduled || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Scheduled</p>
                 </div>
-              ) : (
-                <EmptyState
-                  title="No upcoming meetings"
-                  description="Schedule a meeting to get started"
-                  illustration="calendar"
-                  actionLabel="Schedule Meeting"
-                  onAction={() => !isResizeMode && setCreateMeetingModalOpen(true)}
-                  variant="compact"
-                />
-              )}
+                <div 
+                  className="text-center p-1.5 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/meetings?status=ongoing&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-yellow-600 leading-tight">{upcomingMeetings?.byStatus?.ongoing || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Ongoing</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/meetings?status=completed&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-green-600 leading-tight">{upcomingMeetings?.byStatus?.completed || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Completed</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-red-50 dark:bg-red-950/20 rounded cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/meetings?status=cancelled&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-red-600 leading-tight">{upcomingMeetings?.byStatus?.cancelled || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Cancelled</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         );
 
       case "taskReminders":
         return (
-          <Card className="h-full animate-fade-in">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Bell className="w-5 h-5 text-primary" />
-                Task Reminders
-              </CardTitle>
-              <div className="flex gap-1 text-xs">
-                {(taskReminders?.overdue || 0) > 0 && (
-                  <span className="px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">{taskReminders?.overdue} overdue</span>
-                )}
-                {(taskReminders?.highPriority || 0) > 0 && (
-                  <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">{taskReminders?.highPriority} high</span>
-                )}
-              </div>
+          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">My Tasks</CardTitle>
+              <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => { if (!isResizeMode) { setSelectedTask(null); setTaskModalOpen(true); }}}>
+                <Plus className="w-3 h-3" /> Add Task
+              </Button>
             </CardHeader>
-            <CardContent>
-              {taskReminders?.tasks && taskReminders.tasks.length > 0 ? (
-                <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                  {taskReminders.tasks.map((task: any) => {
-                    const isOverdue = task.due_date && isBefore(new Date(task.due_date), new Date());
-                    const isDueToday = task.due_date && isToday(new Date(task.due_date));
-                    return (
-                      <div 
-                        key={task.id} 
-                        className={`p-2 rounded-lg cursor-pointer transition-colors ${
-                          isOverdue ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' :
-                          isDueToday ? 'bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800' : 'bg-muted/50 hover:bg-muted'
-                        }`}
-                        onClick={() => { if (!isResizeMode) { setSelectedTask(task as Task); setTaskModalOpen(true); }}}
-                      >
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-medium truncate flex-1">{task.title}</p>
-                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                            task.priority === 'high' ? 'bg-red-500 text-white' :
-                            task.priority === 'medium' ? 'bg-amber-500 text-white' : 'bg-slate-500 text-white'
-                          }`}>{task.priority}</span>
-                        </div>
-                        <p className={`text-xs mt-1 ${isOverdue ? 'text-red-600' : isDueToday ? 'text-orange-600' : 'text-muted-foreground'}`}>
-                          {isOverdue ? 'OVERDUE - ' : isDueToday ? 'Due Today - ' : ''}
-                          {task.due_date ? format(new Date(task.due_date), 'MMM d') : 'No date'}
-                        </p>
-                      </div>
-                    );
-                  })}
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
+                <div 
+                  className="text-center p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/tasks?status=open&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-blue-600 leading-tight">{taskReminders?.byStatus?.open || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Open</p>
                 </div>
-              ) : (
-                <EmptyState
-                  title="No pending tasks"
-                  description="You're all caught up!"
-                  illustration="tasks"
-                  actionLabel="Create Task"
-                  onAction={() => { if (!isResizeMode) { setSelectedTask(null); setTaskModalOpen(true); }}}
-                  variant="compact"
-                />
-              )}
+                <div 
+                  className="text-center p-1.5 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/tasks?status=in_progress&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-yellow-600 leading-tight">{taskReminders?.byStatus?.inProgress || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">In Progress</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/tasks?status=completed&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-green-600 leading-tight">{taskReminders?.byStatus?.completed || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Completed</p>
+                </div>
+                <div 
+                  className="text-center p-1.5 bg-red-50 dark:bg-red-950/20 rounded cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/tasks?status=cancelled&owner=me'); }}
+                >
+                  <p className="text-base font-bold text-red-600 leading-tight">{taskReminders?.byStatus?.cancelled || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Cancelled</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         );
 
       case "recentActivities":
+        const getActivityIcon = (action: string, resourceType: string) => {
+          const iconClass = "w-3 h-3";
+          if (action === 'CREATE') return <Plus className={`${iconClass} text-green-600`} />;
+          if (action === 'DELETE') return <X className={`${iconClass} text-red-600`} />;
+          // UPDATE
+          switch (resourceType) {
+            case 'leads': return <Users className={`${iconClass} text-blue-600`} />;
+            case 'contacts': return <Users className={`${iconClass} text-green-600`} />;
+            case 'deals': return <Briefcase className={`${iconClass} text-purple-600`} />;
+            case 'accounts': return <Building2 className={`${iconClass} text-indigo-600`} />;
+            case 'meetings': return <Calendar className={`${iconClass} text-teal-600`} />;
+            case 'tasks': return <ListTodo className={`${iconClass} text-orange-600`} />;
+            default: return <Activity className={`${iconClass} text-primary`} />;
+          }
+        };
+        const getActivityBadge = (action: string) => {
+          if (action === 'CREATE') return { text: 'Created', class: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' };
+          if (action === 'DELETE') return { text: 'Deleted', class: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
+          return { text: 'Updated', class: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' };
+        };
+        const getIconBgColor = (action: string, resourceType: string) => {
+          if (action === 'CREATE') return 'bg-green-100 dark:bg-green-900/30';
+          if (action === 'DELETE') return 'bg-red-100 dark:bg-red-900/30';
+          switch (resourceType) {
+            case 'leads': return 'bg-blue-100 dark:bg-blue-900/30';
+            case 'contacts': return 'bg-emerald-100 dark:bg-emerald-900/30';
+            case 'deals': return 'bg-purple-100 dark:bg-purple-900/30';
+            case 'accounts': return 'bg-indigo-100 dark:bg-indigo-900/30';
+            case 'meetings': return 'bg-teal-100 dark:bg-teal-900/30';
+            case 'tasks': return 'bg-orange-100 dark:bg-orange-900/30';
+            default: return 'bg-muted';
+          }
+        };
+        const formatRelativeTime = (dateStr: string) => {
+          const date = new Date(dateStr);
+          const now = new Date();
+          const diffMs = now.getTime() - date.getTime();
+          const diffMins = Math.floor(diffMs / 60000);
+          const diffHrs = Math.floor(diffMs / 3600000);
+          const diffDays = Math.floor(diffMs / 86400000);
+          
+          if (diffMins < 1) return 'Just now';
+          if (diffMins < 60) return `${diffMins}m ago`;
+          if (diffHrs < 24) return `${diffHrs}h ago`;
+          if (diffDays < 7) return `${diffDays}d ago`;
+          return format(date, 'MMM d');
+        };
+        const getActivityUserName = (activityUserId: string) => {
+          const profile = userProfiles?.find(p => p.id === activityUserId);
+          return profile?.full_name || 'Unknown User';
+        };
+        const navigateToEntity = (resourceType: string) => {
+          if (isResizeMode) return;
+          switch (resourceType) {
+            case 'leads': navigate('/leads'); break;
+            case 'contacts': navigate('/contacts'); break;
+            case 'deals': navigate('/deals'); break;
+            case 'accounts': navigate('/accounts'); break;
+            case 'meetings': navigate('/meetings'); break;
+            case 'tasks': navigate('/tasks'); break;
+          }
+        };
         return (
-          <Card className="h-full animate-fade-in">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="w-5 h-5 text-primary" />
+          <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="flex items-center gap-1.5 text-sm font-medium truncate">
+                <Activity className="w-4 h-4 text-primary flex-shrink-0" />
                 Recent Activities
               </CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => !isResizeMode && navigate('/notifications')}>View All</Button>
-            </CardHeader>
-            <CardContent>
-              {recentActivities && recentActivities.length > 0 ? (
-                <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                  {recentActivities.slice(0, 5).map((activity) => (
-                    <div key={activity.id} className="flex items-start gap-2 p-2 rounded-lg bg-muted/50">
-                      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <Activity className="w-3 h-3 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium line-clamp-2">{activity.subject}</p>
-                        <p className="text-xs text-muted-foreground">{format(new Date(activity.activity_date), 'MMM d, HH:mm')}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  title="No recent activities"
-                  description="Activities will appear as you work"
-                  illustration="activities"
-                  variant="compact"
-                />
-              )}
-            </CardContent>
-          </Card>
-        );
-
-      case "leadStatus":
-        return (
-          <Card className="h-full animate-fade-in">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                Lead Status Overview
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="w-4 h-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent><p>Your leads by status</p></TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
-                  <p className="text-xl font-bold text-blue-600">{leadsData?.new || 0}</p>
-                  <p className="text-xs text-muted-foreground">New</p>
-                </div>
-                <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg">
-                  <p className="text-xl font-bold text-yellow-600">{leadsData?.contacted || 0}</p>
-                  <p className="text-xs text-muted-foreground">Contacted</p>
-                </div>
-                <div className="text-center p-3 bg-green-50 dark:bg-green-950/20 rounded-lg">
-                  <p className="text-xl font-bold text-green-600">{leadsData?.qualified || 0}</p>
-                  <p className="text-xs text-muted-foreground">Qualified</p>
-                </div>
-                <div className="text-center p-3 bg-purple-50 dark:bg-purple-950/20 rounded-lg">
-                  <p className="text-xl font-bold text-purple-600">{leadsData?.converted || 0}</p>
-                  <p className="text-xs text-muted-foreground">Converted</p>
-                </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {isAdmin && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] text-muted-foreground whitespace-nowrap">
+                      {showAllActivities ? 'All' : 'My'}
+                    </span>
+                    <Switch
+                      checked={showAllActivities}
+                      onCheckedChange={setShowAllActivities}
+                      className="scale-75 data-[state=checked]:bg-primary"
+                    />
+                  </div>
+                )}
+                <Button variant="ghost" size="sm" className="h-6 text-xs flex-shrink-0" onClick={() => !isResizeMode && navigate('/settings?tab=audit')}>
+                  View All
+                </Button>
               </div>
+            </CardHeader>
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              {recentActivities && recentActivities.length > 0 ? (
+                <ScrollArea className="flex-1 min-h-0">
+                  <div className="space-y-2 pr-2">
+                    {recentActivities.slice(0, 8).map((activity) => {
+                      const badge = getActivityBadge(activity.activity_type);
+                      const isOwnActivity = activity.user_id === user?.id;
+                      return (
+                        <div 
+                          key={activity.id} 
+                          className="flex gap-3 p-2.5 rounded-lg bg-muted/40 hover:bg-muted hover:shadow-sm cursor-pointer transition-all"
+                          onClick={() => navigateToEntity(activity.resource_type)}
+                        >
+                          {/* Left: Icon */}
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${getIconBgColor(activity.activity_type, activity.resource_type)}`}>
+                            {getActivityIcon(activity.activity_type, activity.resource_type)}
+                          </div>
+                          
+                          {/* Right: Content */}
+                          <div className="flex-1 min-w-0">
+                            {/* Top row: Badge + Resource + Timestamp */}
+                            <div className="flex items-center justify-between gap-2 mb-0.5">
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <span className="text-[10px] text-muted-foreground capitalize font-medium truncate">
+                                  {activity.resource_type}
+                                </span>
+                              </div>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${badge.class}`}>
+                                {badge.text}
+                              </span>
+                              <TooltipProvider delayDuration={100}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-[9px] text-muted-foreground whitespace-nowrap flex-shrink-0">
+                                      {formatRelativeTime(activity.activity_date)}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left" className="text-xs">
+                                    {format(new Date(activity.activity_date), 'MMM d, yyyy HH:mm')}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
+                            
+                            {/* User name (All Activities mode only, for non-self activities) */}
+                            {showAllActivities && !isOwnActivity && (
+                              <p className="text-[9px] text-muted-foreground mb-0.5 flex items-center gap-1">
+                                <User className="w-2.5 h-2.5" />
+                                {getActivityUserName(activity.user_id)}
+                              </p>
+                            )}
+                            
+                            {/* Description */}
+                            <p className="text-[11px] font-medium line-clamp-2 leading-snug">
+                              {activity.subject}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              ) : (
+                <div className="flex-1 min-h-0 flex items-center justify-center">
+                  <EmptyState
+                    title={showAllActivities ? "No team activities" : "No recent activities"}
+                    description={showAllActivities ? "Team activities will appear here" : "Activities will appear as you work"}
+                    illustration="activities"
+                    variant="compact"
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
         );
 
       case "emailStats":
         return (
-          <Card className="h-full animate-fade-in">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Email Statistics</CardTitle>
-              <Mail className="w-4 h-4 text-blue-600" />
+          <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">Email Statistics</CardTitle>
+              <Mail className="w-4 h-4 text-blue-600 flex-shrink-0" />
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div>
-                  <p className="text-xl font-bold">{emailStats?.sent || 0}</p>
-                  <p className="text-xs text-muted-foreground">Sent</p>
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col justify-center gap-2">
+              <div className="grid grid-cols-3 gap-1.5 text-center">
+                <div className="flex flex-col items-center justify-center">
+                  <p className="text-base font-bold leading-tight">{emailStats?.sent || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Sent</p>
                 </div>
-                <div>
-                  <p className="text-xl font-bold text-green-600">{emailStats?.opened || 0}</p>
-                  <p className="text-xs text-muted-foreground">Opened</p>
+                <div className="flex flex-col items-center justify-center">
+                  <p className="text-base font-bold text-green-600 leading-tight">{emailStats?.opened || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Opened</p>
                 </div>
-                <div>
-                  <p className="text-xl font-bold text-blue-600">{emailStats?.clicked || 0}</p>
-                  <p className="text-xs text-muted-foreground">Clicked</p>
+                <div className="flex flex-col items-center justify-center">
+                  <p className="text-base font-bold text-blue-600 leading-tight">{emailStats?.clicked || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Clicked</p>
                 </div>
               </div>
-              <div className="flex justify-between text-xs text-muted-foreground border-t pt-2">
+              <div className="flex justify-between text-[9px] text-muted-foreground border-t pt-1.5">
                 <span>Open Rate: <span className="font-medium text-foreground">{emailStats?.openRate || 0}%</span></span>
                 <span>Click Rate: <span className="font-medium text-foreground">{emailStats?.clickRate || 0}%</span></span>
               </div>
@@ -1196,70 +1467,213 @@ const UserDashboard = () => {
         );
 
       case "weeklySummary":
+        const summaryWeekStart = weeklySummary?.weekStart || startOfWeek(new Date(), { weekStartsOn: 1 });
+        const summaryWeekEnd = weeklySummary?.weekEnd || endOfWeek(new Date(), { weekStartsOn: 1 });
+        const currentData = weeklySummaryView === 'thisWeek' ? weeklySummary?.thisWeek : weeklySummary?.allTime;
+        const lastWeekData = weeklySummary?.lastWeek;
+        const allZeros = weeklySummaryView === 'thisWeek' && 
+          (currentData?.leads || 0) === 0 && 
+          (currentData?.contacts || 0) === 0 && 
+          (currentData?.accounts || 0) === 0 && 
+          (currentData?.deals || 0) === 0 && 
+          (currentData?.meetings || 0) === 0 && 
+          (currentData?.tasks || 0) === 0;
+
+        const getTrendIndicator = (current: number, previous: number) => {
+          if (weeklySummaryView !== 'thisWeek') return null;
+          const diff = current - previous;
+          if (diff > 0) return { icon: TrendingUp, color: 'text-green-500', diff: `+${diff}` };
+          if (diff < 0) return { icon: TrendingDown, color: 'text-red-500', diff: `${diff}` };
+          return { icon: Minus, color: 'text-muted-foreground', diff: '0' };
+        };
+
+        // Build navigation URLs with date filters for "this week" view
+        const buildNavUrl = (basePath: string) => {
+          if (weeklySummaryView === 'thisWeek') {
+            const fromStr = summaryWeekStart.toISOString();
+            const toStr = summaryWeekEnd.toISOString();
+            return `${basePath}?from=${encodeURIComponent(fromStr)}&to=${encodeURIComponent(toStr)}&status=all`;
+          }
+          return `${basePath}?status=all`;
+        };
+
+        const summaryItems = [
+          { key: 'leads', label: 'Leads', color: 'blue', value: currentData?.leads || 0, lastWeek: lastWeekData?.leads || 0, nav: buildNavUrl('/leads'), tooltip: weeklySummaryView === 'thisWeek' ? 'New leads created this week' : 'Total leads (all time)', action: () => setLeadModalOpen(true) },
+          { key: 'contacts', label: 'Contacts', color: 'green', value: currentData?.contacts || 0, lastWeek: lastWeekData?.contacts || 0, nav: buildNavUrl('/contacts'), tooltip: weeklySummaryView === 'thisWeek' ? 'New contacts added this week' : 'Total contacts (all time)', action: () => setContactModalOpen(true) },
+          { key: 'accounts', label: 'Accounts', color: 'cyan', value: currentData?.accounts || 0, lastWeek: lastWeekData?.accounts || 0, nav: buildNavUrl('/accounts'), tooltip: weeklySummaryView === 'thisWeek' ? 'New accounts created this week' : 'Total accounts (all time)', action: () => setAccountModalOpen(true) },
+          { key: 'deals', label: 'Deals', color: 'purple', value: currentData?.deals || 0, lastWeek: lastWeekData?.deals || 0, nav: buildNavUrl('/deals'), tooltip: weeklySummaryView === 'thisWeek' ? 'New deals created this week' : 'Total deals (all time)', action: () => navigate('/deals') },
+          { key: 'meetings', label: 'Meetings', color: 'indigo', value: currentData?.meetings || 0, lastWeek: lastWeekData?.meetings || 0, nav: buildNavUrl('/meetings'), tooltip: weeklySummaryView === 'thisWeek' ? 'Meetings completed this week' : 'Meetings completed (all time)', action: () => setCreateMeetingModalOpen(true) },
+          { key: 'tasks', label: 'Tasks', color: 'emerald', value: currentData?.tasks || 0, lastWeek: lastWeekData?.tasks || 0, nav: buildNavUrl('/tasks'), tooltip: weeklySummaryView === 'thisWeek' ? 'Tasks completed this week' : 'Tasks completed (all time)', action: () => { setSelectedTask(null); setTaskModalOpen(true); } },
+        ];
+
         return (
-          <Card className="h-full animate-fade-in">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">This Week</CardTitle>
-              <ListTodo className="w-4 h-4 text-teal-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-5 gap-2 text-center">
-                <div className="p-2 rounded bg-blue-50 dark:bg-blue-950/20">
-                  <p className="text-lg font-bold text-blue-600">{weeklySummary?.newLeads || 0}</p>
-                  <p className="text-xs text-muted-foreground">Leads</p>
-                </div>
-                <div className="p-2 rounded bg-green-50 dark:bg-green-950/20">
-                  <p className="text-lg font-bold text-green-600">{weeklySummary?.newContacts || 0}</p>
-                  <p className="text-xs text-muted-foreground">Contacts</p>
-                </div>
-                <div className="p-2 rounded bg-purple-50 dark:bg-purple-950/20">
-                  <p className="text-lg font-bold text-purple-600">{weeklySummary?.newDeals || 0}</p>
-                  <p className="text-xs text-muted-foreground">Deals</p>
-                </div>
-                <div className="p-2 rounded bg-indigo-50 dark:bg-indigo-950/20">
-                  <p className="text-lg font-bold text-indigo-600">{weeklySummary?.meetingsCompleted || 0}</p>
-                  <p className="text-xs text-muted-foreground">Meetings</p>
-                </div>
-                <div className="p-2 rounded bg-emerald-50 dark:bg-emerald-950/20">
-                  <p className="text-lg font-bold text-emerald-600">{weeklySummary?.tasksCompleted || 0}</p>
-                  <p className="text-xs text-muted-foreground">Tasks Done</p>
+          <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="flex items-center gap-1.5 text-sm font-medium truncate">
+                {weeklySummaryView === 'thisWeek' ? 'Activity This Week' : 'Activity All Time'}
+              </CardTitle>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {weeklySummaryView === 'thisWeek' && (
+                  <span className="text-[8px] text-muted-foreground">{format(summaryWeekStart, 'MMM d')} - {format(summaryWeekEnd, 'MMM d')}</span>
+                )}
+                <div className="flex rounded-md overflow-hidden border border-border text-[8px]">
+                  <button
+                    className={`px-1.5 py-0.5 transition-colors ${weeklySummaryView === 'thisWeek' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                    onClick={() => setWeeklySummaryView('thisWeek')}
+                  >
+                    Week
+                  </button>
+                  <button
+                    className={`px-1.5 py-0.5 transition-colors ${weeklySummaryView === 'allTime' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                    onClick={() => setWeeklySummaryView('allTime')}
+                  >
+                    All
+                  </button>
                 </div>
               </div>
+            </CardHeader>
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col justify-center">
+              {allZeros ? (
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <p className="text-[10px] text-muted-foreground text-center">No activity yet this week</p>
+                  <div className="flex flex-wrap justify-center gap-1">
+                    <Button variant="outline" size="sm" className="h-5 text-[9px] px-2 gap-0.5" onClick={() => !isResizeMode && setLeadModalOpen(true)}>
+                      <Plus className="w-2.5 h-2.5" /> Lead
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-5 text-[9px] px-2 gap-0.5" onClick={() => !isResizeMode && setContactModalOpen(true)}>
+                      <Plus className="w-2.5 h-2.5" /> Contact
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-5 text-[9px] px-2 gap-0.5" onClick={() => !isResizeMode && setAccountModalOpen(true)}>
+                      <Plus className="w-2.5 h-2.5" /> Account
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-5 text-[9px] px-2 gap-0.5" onClick={() => !isResizeMode && setCreateMeetingModalOpen(true)}>
+                      <Plus className="w-2.5 h-2.5" /> Meeting
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-5 text-[9px] px-2 gap-0.5" onClick={() => { if (!isResizeMode) { setSelectedTask(null); setTaskModalOpen(true); }}}>
+                      <Plus className="w-2.5 h-2.5" /> Task
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-6 gap-1 text-center">
+                  {summaryItems.map((item) => {
+                    const trend = getTrendIndicator(item.value, item.lastWeek);
+                    const TrendIcon = trend?.icon;
+                    return (
+                      <TooltipProvider key={item.key} delayDuration={100}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div 
+                              className={`p-1.5 rounded bg-${item.color}-50 dark:bg-${item.color}-950/20 flex flex-col items-center justify-center cursor-pointer hover:bg-${item.color}-100 dark:hover:bg-${item.color}-950/40 transition-colors relative`}
+                              onClick={() => !isResizeMode && navigate(item.nav)}
+                            >
+                              <p className={`text-sm font-bold text-${item.color}-600 leading-tight`}>{item.value}</p>
+                              <p className="text-[8px] text-muted-foreground leading-tight">{item.label}</p>
+                              {TrendIcon && weeklySummaryView === 'thisWeek' && (
+                                <div className={`absolute -top-0.5 -right-0.5 flex items-center ${trend.color}`}>
+                                  <TrendIcon className="w-2.5 h-2.5" />
+                                </div>
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={8} className="z-[100]">
+                            <p className="whitespace-nowrap">{item.tooltip}</p>
+                            {weeklySummaryView === 'thisWeek' && (
+                              <p className="text-[10px] text-muted-foreground">vs last week: {trend?.diff}</p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         );
 
       case "followUpsDue":
+        const handleCompleteFollowUp = async (followUpId: string, e: React.MouseEvent) => {
+          e.stopPropagation();
+          try {
+            await supabase.from('meeting_follow_ups').update({ status: 'completed' }).eq('id', followUpId);
+            queryClient.invalidateQueries({ queryKey: ['user-follow-ups-due', user?.id] });
+            toast.success("Follow-up completed");
+          } catch (error) {
+            toast.error("Failed to complete follow-up");
+          }
+        };
         return (
-          <Card className="h-full animate-fade-in">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Follow-Ups Due</CardTitle>
-              <div className="flex items-center gap-2">
+          <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">Follow-Ups Due</CardTitle>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
                 {(followUpsDue?.overdue || 0) > 0 && (
-                  <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
                     {followUpsDue?.overdue} overdue
                   </span>
                 )}
-                <ClipboardList className="w-4 h-4 text-amber-600" />
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => !isResizeMode && navigate('/meetings')}>
+                        <ClipboardList className="w-4 h-4 text-amber-600" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>View all meetings</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
               {followUpsDue?.followUps && followUpsDue.followUps.length > 0 ? (
-                <div className="space-y-2 max-h-[150px] overflow-y-auto">
-                  {followUpsDue.followUps.map((followUp: any) => {
-                    const isOverdue = followUp.due_date && isBefore(new Date(followUp.due_date), new Date());
-                    return (
-                      <div key={followUp.id} className={`p-2 rounded text-xs ${isOverdue ? 'bg-red-50 dark:bg-red-900/20' : 'bg-muted/50'}`}>
-                        <p className="font-medium truncate">{followUp.title}</p>
-                        <p className={`text-muted-foreground ${isOverdue ? 'text-red-600' : ''}`}>
-                          Due: {followUp.due_date ? format(new Date(followUp.due_date), 'MMM d') : 'No date'}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
+                <ScrollArea className="flex-1 min-h-0">
+                  <div className="space-y-1.5 pr-2">
+                    {followUpsDue.followUps.map((followUp: any) => {
+                      const isOverdue = followUp.due_date && isBefore(new Date(followUp.due_date), new Date());
+                      return (
+                        <div 
+                          key={followUp.id} 
+                          className={`p-1.5 rounded text-[10px] flex items-start gap-1.5 group cursor-pointer transition-colors ${isOverdue ? 'bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30' : 'bg-muted/50 hover:bg-muted'}`}
+                          onClick={async () => {
+                            if (isResizeMode) return;
+                            // Fetch meeting details and open modal
+                            const { data: meeting } = await supabase.from('meetings').select('*').eq('id', followUp.meeting_id).single();
+                            if (meeting) {
+                              setSelectedMeeting(meeting);
+                              setMeetingModalOpen(true);
+                            }
+                          }}
+                        >
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button 
+                                  className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${isOverdue ? 'border-red-300 dark:border-red-600 hover:bg-green-500 hover:border-green-500' : 'border-muted-foreground/30 hover:bg-green-500 hover:border-green-500'}`}
+                                  onClick={(e) => handleCompleteFollowUp(followUp.id, e)}
+                                >
+                                  <Check className="w-2 h-2 opacity-0 group-hover:opacity-100 text-white" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>Mark complete</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{followUp.title}</p>
+                            <div className="flex items-center gap-1 text-[9px] text-muted-foreground">
+                              <span className={isOverdue ? 'text-red-600 font-medium' : ''}>
+                                {isOverdue ? '⚠️ Overdue: ' : 'Due: '}
+                                {followUp.due_date ? format(new Date(followUp.due_date), 'MMM d') : 'No date'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
               ) : (
-                <div className="text-center py-4 text-muted-foreground text-sm">
+                <div className="flex-1 min-h-0 flex items-center justify-center text-muted-foreground text-[10px]">
                   No pending follow-ups
                 </div>
               )}
@@ -1273,7 +1687,7 @@ const UserDashboard = () => {
   };
 
   return (
-    <div className="p-6 space-y-8" ref={containerRef}>
+    <div className="px-2 sm:px-4 py-4 space-y-4 w-full overflow-x-hidden" ref={containerRef}>
       {/* Welcome Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="min-w-0 flex-1">
