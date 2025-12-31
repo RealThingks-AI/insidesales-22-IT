@@ -8,8 +8,6 @@ import { useAuth } from "@/hooks/useAuth";
 import SecurityEnhancedApp from "@/components/SecurityEnhancedApp";
 import { AppSidebar } from "@/components/AppSidebar";
 import PageAccessGuard from "@/components/PageAccessGuard";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { GlobalSearch } from "@/components/shared/GlobalSearch";
 import Dashboard from "./pages/Dashboard";
 import Accounts from "./pages/Accounts";
 import Contacts from "./pages/Contacts";
@@ -45,8 +43,6 @@ const FixedSidebarLayout = ({ children }: { children: React.ReactNode }) => {
         <div className="w-full h-full overflow-auto">
           {children}
         </div>
-        {/* Global Search Command Palette */}
-        <GlobalSearch />
       </main>
     </div>
   );
@@ -168,17 +164,15 @@ const AppRouter = () => (
 );
 
 const App = () => (
-  <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <SecurityEnhancedApp>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <AppRouter />
-        </TooltipProvider>
-      </SecurityEnhancedApp>
-    </QueryClientProvider>
-  </ErrorBoundary>
+  <QueryClientProvider client={queryClient}>
+    <SecurityEnhancedApp>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <AppRouter />
+      </TooltipProvider>
+    </SecurityEnhancedApp>
+  </QueryClientProvider>
 );
 
 export default App;

@@ -26,10 +26,10 @@ const Dashboard = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   
-  // Dynamic year range: 5 years before and after current year
+  const availableYears = [2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030];
   const currentYear = new Date().getFullYear();
-  const availableYears = Array.from({ length: 11 }, (_, i) => currentYear - 5 + i);
-  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const defaultYear = availableYears.includes(currentYear) ? currentYear : 2025;
+  const [selectedYear, setSelectedYear] = useState(defaultYear);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Fetch user's profile name
@@ -107,19 +107,8 @@ const Dashboard = () => {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      // Invalidate all dashboard-related queries with proper patterns
-      await queryClient.invalidateQueries({ predicate: (query) => {
-        const key = query.queryKey[0];
-        return typeof key === 'string' && (
-          key.startsWith('user-') || 
-          key.startsWith('dashboard-') ||
-          key === 'deals' ||
-          key === 'leads' ||
-          key === 'accounts' ||
-          key === 'tasks' ||
-          key === 'meetings'
-        );
-      }});
+      await queryClient.invalidateQueries({ queryKey: ['user-'] });
+      await queryClient.invalidateQueries({ queryKey: ['dashboard-'] });
       toast.success("Dashboard refreshed");
     } catch {
       toast.error("Failed to refresh");
@@ -152,15 +141,21 @@ const Dashboard = () => {
       <div className="flex-shrink-0 bg-background">
         <div className="px-6 h-16 flex items-center border-b w-full">
           <div className="flex items-center justify-between w-full gap-4">
-            {/* Left side: View toggle and greeting */}
+            {/* Left side: Greeting and optional view toggle */}
             <div className="flex items-center gap-4 min-w-0 flex-1">
-              {/* Admin-only view toggle - positioned first/left */}
+              <div className="min-w-0">
+                <h1 className="text-xl sm:text-2xl font-semibold text-foreground truncate">
+                  {greeting}{userName ? `, ${userName}` : ''}!
+                </h1>
+              </div>
+              
+              {/* Admin-only view toggle */}
               {isAdmin && (
                 <ToggleGroup 
                   type="single" 
                   value={currentView} 
                   onValueChange={handleViewChange}
-                  className="bg-muted/60 border border-border rounded-lg p-1 hidden sm:flex flex-shrink-0"
+                  className="bg-muted/60 border border-border rounded-lg p-1 hidden sm:flex"
                 >
                   <ToggleGroupItem 
                     value="overview" 
@@ -180,12 +175,6 @@ const Dashboard = () => {
                   </ToggleGroupItem>
                 </ToggleGroup>
               )}
-              
-              <div className="min-w-0">
-                <h1 className="text-xl sm:text-2xl font-semibold text-foreground truncate">
-                  {greeting}{userName ? `, ${userName}` : ''}!
-                </h1>
-              </div>
             </div>
             
             {/* Right side: Actions */}

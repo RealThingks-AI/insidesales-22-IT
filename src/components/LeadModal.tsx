@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
 
 const leadSchema = z.object({
   lead_name: z.string()
@@ -173,6 +172,8 @@ export const LeadModal = ({ open, onOpenChange, lead, onSuccess }: LeadModalProp
       };
 
       if (lead) {
+        console.log('Updating lead with data:', { ...baseLeadData, modified_time: new Date().toISOString() });
+        
         const { data: updatedLead, error } = await supabase
           .from('leads')
           .update({
@@ -187,6 +188,10 @@ export const LeadModal = ({ open, onOpenChange, lead, onSuccess }: LeadModalProp
           console.error('Error updating lead:', error);
           throw error;
         }
+        
+        console.log('Lead updated successfully:', updatedLead);
+
+        if (error) throw error;
 
         await logUpdate('leads', lead.id, baseLeadData, lead);
 
@@ -203,6 +208,8 @@ export const LeadModal = ({ open, onOpenChange, lead, onSuccess }: LeadModalProp
           created_time: new Date().toISOString(),
         };
         
+        console.log('Creating new lead with data:', newLeadData);
+        
         const { data: newLead, error } = await supabase
           .from('leads')
           .insert(newLeadData)
@@ -213,6 +220,8 @@ export const LeadModal = ({ open, onOpenChange, lead, onSuccess }: LeadModalProp
           console.error('Error creating lead:', error);
           throw error;
         }
+        
+        console.log('Lead created successfully:', newLead);
 
         await logCreate('leads', newLead.id, newLeadData);
 
@@ -441,7 +450,7 @@ export const LeadModal = ({ open, onOpenChange, lead, onSuccess }: LeadModalProp
               <Button type="submit" disabled={loading}>
                 {loading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <span className="animate-spin mr-2">⏳</span>
                     {lead ? "Saving..." : "Creating..."}
                   </>
                 ) : lead ? "Save Changes" : "Add Lead"}
