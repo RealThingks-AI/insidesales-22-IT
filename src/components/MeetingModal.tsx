@@ -1131,8 +1131,8 @@ export const MeetingModal = ({
           }))} placeholder="Meeting agenda..." rows={2} className="text-xs resize-none min-h-[60px]" />
           </div>
 
-          {/* Outcome - only for completed meetings */}
-          {isPersistedMeeting && formData.status === 'completed' && <MeetingOutcomeSelect value={formData.outcome} onChange={value => setFormData(prev => ({
+          {/* Outcome - show for completed meetings based on effective status */}
+          {isPersistedMeeting && effectiveStatus === 'completed' && <MeetingOutcomeSelect value={formData.outcome} onChange={value => setFormData(prev => ({
           ...prev,
           outcome: value
         }))} />}

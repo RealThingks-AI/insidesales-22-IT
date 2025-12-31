@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { X, ChevronDown } from "lucide-react";
+import { X, ChevronDown, Loader2 } from "lucide-react";
 import { Account } from "./AccountTable";
 
 const accountSchema = z.object({
@@ -25,11 +25,12 @@ const accountSchema = z.object({
   region: z.string().optional(),
   country: z.string().optional(),
   website: z.string().url("Please enter a valid URL (e.g., https://company.com)").optional().or(z.literal("")),
-  company_type: z.string().max(50, "Company type must be less than 50 characters").optional(),
+  company_type: z.string().optional(),
   status: z.string().optional(),
   notes: z.string().max(2000, "Notes must be less than 2000 characters").optional(),
   industry: z.string().optional(),
   phone: z.string().max(20, "Phone number must be less than 20 characters").optional(),
+  segment: z.string().optional(),
 });
 
 type AccountFormData = z.infer<typeof accountSchema>;
@@ -61,7 +62,15 @@ const tagOptions = [
   "Vehicle Architecture", "Connected Car", "Platform", "µC/HW"
 ];
 
-const industries = ["Automotive", "Technology", "Manufacturing", "Other"];
+const industries = [
+  "Automotive", "Technology", "Manufacturing", "Healthcare", "Finance/Banking",
+  "Retail", "Energy", "Aerospace", "Telecommunications", "Logistics",
+  "Government", "Education", "Consulting", "Software", "Electronics", "Other"
+];
+
+const companyTypes = ["OEM", "Tier-1", "Tier-2", "Startup", "Enterprise", "SMB", "Government", "Non-Profit", "Other"];
+
+const segments = ["prospect", "customer", "partner", "vendor", "competitor"];
 
 export const AccountModal = ({ open, onOpenChange, account, onSuccess }: AccountModalProps) => {
   const { toast } = useToast();
@@ -83,6 +92,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess }: Account
       notes: "",
       industry: "",
       phone: "",
+      segment: "prospect",
     },
   });
 
@@ -109,6 +119,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess }: Account
         notes: account.notes || "",
         industry: account.industry || "",
         phone: account.phone || "",
+        segment: account.segment || "prospect",
       });
       setSelectedTags(account.tags || []);
       if (account.region && regionCountries[account.region]) {
@@ -126,6 +137,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess }: Account
         notes: "",
         industry: "",
         phone: "",
+        segment: "prospect",
       });
       setSelectedTags([]);
     }
@@ -163,6 +175,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess }: Account
         notes: data.notes || null,
         industry: data.industry || null,
         phone: data.phone || null,
+        segment: data.segment || 'prospect',
         account_owner: user.data.user.id,
         modified_by: user.data.user.id,
       };
@@ -366,9 +379,45 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess }: Account
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Company Type</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., OEM, Tier-1, Startup" {...field} />
-                    </FormControl>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select company type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {companyTypes.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            {type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="segment"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Segment</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select segment" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {segments.map((seg) => (
+                          <SelectItem key={seg} value={seg}>
+                            {seg.charAt(0).toUpperCase() + seg.slice(1)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -499,7 +548,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess }: Account
               <Button type="submit" disabled={loading}>
                 {loading ? (
                   <>
-                    <span className="animate-spin mr-2">⏳</span>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     {account ? "Saving..." : "Creating..."}
                   </>
                 ) : account ? "Save Changes" : "Add Account"}

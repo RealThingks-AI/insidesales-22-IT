@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useColumnPreferences } from "@/hooks/useColumnPreferences";
+import { DeleteConfirmDialog } from "./shared/DeleteConfirmDialog";
 
 interface ListViewProps {
   deals: Deal[];
@@ -68,6 +69,10 @@ export const ListView = ({
   const [taskDealId, setTaskDealId] = useState<string | null>(null);
   const { createTask } = useTasks();
 
+  // Delete confirmation state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [dealToDelete, setDealToDelete] = useState<Deal | null>(null);
+
   // Column customizer state
   const [columnCustomizerOpen, setColumnCustomizerOpen] = useState(false);
 
@@ -80,23 +85,17 @@ export const ListView = ({
     },
   });
 
-  const [columns, setColumns] = useState<DealColumnConfig[]>([
-    { field: 'project_name', label: 'Project', visible: true, order: 0 },
-    { field: 'customer_name', label: 'Customer', visible: true, order: 1 },
-    { field: 'lead_name', label: 'Lead Name', visible: true, order: 2 },
-    { field: 'stage', label: 'Stage', visible: true, order: 3 },
-    { field: 'priority', label: 'Priority', visible: true, order: 4 },
-    { field: 'total_contract_value', label: 'Value', visible: true, order: 5 },
-    { field: 'probability', label: 'Probability', visible: true, order: 6 },
-    { field: 'expected_closing_date', label: 'Expected Close', visible: true, order: 7 },
-    { field: 'region', label: 'Region', visible: false, order: 8 },
-    { field: 'project_duration', label: 'Duration', visible: false, order: 9 },
-    { field: 'start_date', label: 'Start Date', visible: false, order: 10 },
-    { field: 'end_date', label: 'End Date', visible: false, order: 11 },
-    { field: 'proposal_due_date', label: 'Proposal Due', visible: false, order: 12 },
-    { field: 'total_revenue', label: 'Total Revenue', visible: false, order: 13 },
-    { field: 'lead_owner', label: 'Lead Owner', visible: true, order: 14 },
-  ]);
+  // Column preferences hook
+  const { columns: savedColumns, saveColumns, isSaving } = useColumnPreferences({
+    moduleName: 'deals',
+    defaultColumns: defaultDealColumns,
+  });
+  const [columns, setColumns] = useState<DealColumnConfig[]>(savedColumns);
+  
+  // Sync local columns when saved columns change
+  useEffect(() => {
+    setColumns(savedColumns);
+  }, [savedColumns]);
 
   // Column width state
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
@@ -581,11 +580,8 @@ export const ListView = ({
                             label: "Delete",
                             icon: <Trash2 className="w-4 h-4" />,
                             onClick: () => {
-                              onDeleteDeals([deal.id]);
-                              toast({
-                                title: "Deal deleted",
-                                description: `Successfully deleted ${deal.project_name || 'deal'}`,
-                              });
+                              setDealToDelete(deal);
+                              setDeleteDialogOpen(true);
                             },
                             destructive: true,
                             separator: true
@@ -673,6 +669,26 @@ export const ListView = ({
         onOpenChange={setColumnCustomizerOpen}
         columns={columns}
         onColumnsChange={setColumns}
+        onSave={saveColumns}
+        isSaving={isSaving}
+      />
+
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={() => {
+          if (dealToDelete) {
+            onDeleteDeals([dealToDelete.id]);
+            toast({
+              title: "Deal deleted",
+              description: `Successfully deleted ${dealToDelete.project_name || 'deal'}`,
+            });
+            setDealToDelete(null);
+          }
+        }}
+        title="Delete Deal"
+        itemName={dealToDelete?.project_name || 'this deal'}
+        itemType="deal"
       />
     </div>
   );

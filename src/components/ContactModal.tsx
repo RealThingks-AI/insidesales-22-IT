@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { X, ChevronDown } from "lucide-react";
+import { X, ChevronDown, Loader2 } from "lucide-react";
 
 const contactSchema = z.object({
   contact_name: z.string()
@@ -61,11 +61,14 @@ interface ContactModalProps {
 }
 
 const contactSources = [
-  "LinkedIn",
   "Website",
-  "Referral", 
-  "Social Media",
+  "Referral",
+  "LinkedIn",
+  "Cold Call",
+  "Trade Show",
   "Email Campaign",
+  "Social Media",
+  "Partner",
   "Other"
 ];
 
@@ -463,7 +466,7 @@ export const ContactModal = ({ open, onOpenChange, contact, onSuccess }: Contact
               <Button type="submit" disabled={loading}>
                 {loading ? (
                   <>
-                    <span className="animate-spin mr-2">⏳</span>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     {contact ? "Saving..." : "Creating..."}
                   </>
                 ) : contact ? "Save Changes" : "Add Contact"}

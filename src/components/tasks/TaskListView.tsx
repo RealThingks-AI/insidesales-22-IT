@@ -32,9 +32,11 @@ import {
   Calendar,
   FileText,
   AlertCircle,
+  Eye,
 } from 'lucide-react';
 import { useUserDisplayNames } from '@/hooks/useUserDisplayNames';
 import { DeleteConfirmDialog } from '@/components/shared/DeleteConfirmDialog';
+import { TaskDetailModal } from './TaskDetailModal';
 
 interface TaskListViewProps {
   tasks: Task[];
@@ -82,6 +84,7 @@ export const TaskListView = ({
   const [assignedToFilter, setAssignedToFilter] = useState<string>(initialOwnerFilter);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [viewingTask, setViewingTask] = useState<Task | null>(null);
 
   // Sync statusFilter when initialStatusFilter prop changes (from URL)
   useEffect(() => {
@@ -319,6 +322,15 @@ export const TaskListView = ({
                           variant="ghost"
                           size="sm"
                           className="h-8 w-8 p-0"
+                          onClick={() => setViewingTask(task)}
+                          aria-label="View task"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
                           onClick={() => onEdit(task)}
                           aria-label="Edit task"
                         >
@@ -349,6 +361,16 @@ export const TaskListView = ({
         onConfirm={handleConfirmDelete}
         itemName={taskToDelete?.title}
         itemType="task"
+      />
+
+      <TaskDetailModal
+        open={!!viewingTask}
+        onOpenChange={(open) => !open && setViewingTask(null)}
+        task={viewingTask}
+        onEdit={(task) => {
+          setViewingTask(null);
+          onEdit(task);
+        }}
       />
     </div>
   );

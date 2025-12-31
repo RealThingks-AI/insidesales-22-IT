@@ -6,9 +6,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { 
   Users, FileText, Briefcase, Plus, Settings2, Calendar, Activity, Bell, 
-  Mail, Building2, ListTodo, CalendarClock, ClipboardList, Check, X, TrendingUp, TrendingDown, Minus, User, Search
+  Mail, Building2, ListTodo, CalendarClock, ClipboardList, Check, X, TrendingUp, TrendingDown, Minus, User
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -28,7 +27,7 @@ import { AccountModal } from "@/components/AccountModal";
 import { useTasks } from "@/hooks/useTasks";
 import { Task } from "@/types/task";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { GlobalSearch } from "./GlobalSearch";
+import { GlobalSearch } from "@/components/shared/GlobalSearch";
 
 const GRID_COLS = 12;
 
@@ -1750,9 +1749,8 @@ const UserDashboard = ({ hideHeader = false }: UserDashboardProps) => {
 
   return (
     <div className="px-2 sm:px-4 py-4 space-y-4 w-full overflow-x-hidden" ref={containerRef}>
-      {/* Customize Controls - sticky header */}
-      <div className="flex items-center justify-between flex-wrap gap-2 sticky top-0 z-40 bg-background py-2 -mt-2">
-        {/* Global Search */}
+      {/* Customize Controls - shown at top when hideHeader is true, otherwise part of header */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <GlobalSearch />
         <div className="flex gap-2 flex-shrink-0 items-center">
           {isResizeMode ? (

@@ -16,6 +16,7 @@ interface InlineEditCellProps {
   type?: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'boolean' | 'stage' | 'priority' | 'currency' | 'userSelect';
   options?: string[];
   userOptions?: Array<{ id: string; full_name: string | null }>;
+  currencyType?: string;
 }
 
 export const InlineEditCell = ({ 
@@ -25,7 +26,8 @@ export const InlineEditCell = ({
   onSave, 
   type = 'text',
   options = [],
-  userOptions = []
+  userOptions = [],
+  currencyType = 'EUR'
 }: InlineEditCellProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(value || '');
@@ -64,8 +66,8 @@ export const InlineEditCell = ({
     if (value === null || value === undefined || value === '') return '-';
     
     if (type === 'currency') {
-      const symbols = { USD: '$', EUR: '€', INR: '₹' };
-      return `${symbols[value.currency_type as keyof typeof symbols] || '€'}${Number(value).toLocaleString()}`;
+      const symbols: Record<string, string> = { USD: '$', EUR: '€', INR: '₹' };
+      return `${symbols[currencyType] || '€'}${Number(value).toLocaleString()}`;
     }
     
     if (type === 'date' && value) {

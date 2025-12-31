@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, forwardRef, useImperativeHandle } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +25,11 @@ import { HighlightedText } from "./shared/HighlightedText";
 import { ClearFiltersButton } from "./shared/ClearFiltersButton";
 import { TableSkeleton } from "./shared/Skeletons";
 import { useQuery } from "@tanstack/react-query";
+
+// Export ref interface for parent component
+export interface AccountTableRef {
+  handleBulkDelete: () => Promise<void>;
+}
 
 export interface Account {
   id: string;
@@ -64,7 +69,7 @@ interface AccountTableProps {
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-const AccountTable = ({
+const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
   showColumnCustomizer,
   setShowColumnCustomizer,
   showModal,
@@ -73,7 +78,7 @@ const AccountTable = ({
   setSelectedAccounts,
   onBulkDeleteComplete,
   initialStatus = "all"
-}: AccountTableProps) => {
+}, ref) => {
   const { toast } = useToast();
   const { logDelete } = useCRUDAudit();
   const [searchParams] = useSearchParams();
@@ -143,6 +148,11 @@ const AccountTable = ({
   const [viewingAccount, setViewingAccount] = useState<Account | null>(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
+  // Expose handleBulkDelete to parent via ref
+  useImperativeHandle(ref, () => ({
+    handleBulkDelete
+  }), [selectedAccounts, accounts]);
+
   // Fetch all profiles for owner dropdown
   const { data: allProfiles = [] } = useQuery({
     queryKey: ['all-profiles'],
@@ -157,11 +167,19 @@ const AccountTable = ({
   }, []);
 
   useEffect(() => {
+    const searchLower = searchTerm.toLowerCase();
     let filtered = accounts.filter(account => 
-      account.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      account.industry?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      account.country?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      account.email?.toLowerCase().includes(searchTerm.toLowerCase())
+      account.company_name?.toLowerCase().includes(searchLower) || 
+      account.industry?.toLowerCase().includes(searchLower) || 
+      account.country?.toLowerCase().includes(searchLower) ||
+      account.email?.toLowerCase().includes(searchLower) ||
+      account.phone?.toLowerCase().includes(searchLower) ||
+      account.website?.toLowerCase().includes(searchLower) ||
+      account.notes?.toLowerCase().includes(searchLower) ||
+      account.company_type?.toLowerCase().includes(searchLower) ||
+      account.region?.toLowerCase().includes(searchLower) ||
+      account.segment?.toLowerCase().includes(searchLower) ||
+      account.tags?.some(tag => tag.toLowerCase().includes(searchLower))
     );
     
     if (statusFilter !== "all") {
@@ -716,7 +734,7 @@ const AccountTable = ({
                                 setShowModal(true);
                               }
                             },
-                            {
+                            ...(account.email ? [{
                               label: "Send Email",
                               icon: <Mail className="w-4 h-4" />,
                               onClick: () => {
@@ -727,7 +745,7 @@ const AccountTable = ({
                                 });
                                 setEmailModalOpen(true);
                               }
-                            },
+                            }] : []),
                             {
                               label: "Delete",
                               icon: <Trash2 className="w-4 h-4" />,
@@ -828,6 +846,8 @@ const AccountTable = ({
       <SendEmailModal open={emailModalOpen} onOpenChange={setEmailModalOpen} recipient={emailRecipient} />
     </div>
   );
-};
+});
+
+AccountTable.displayName = "AccountTable";
 
 export default AccountTable;

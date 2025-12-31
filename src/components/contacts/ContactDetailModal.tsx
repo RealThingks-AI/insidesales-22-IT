@@ -33,6 +33,7 @@ import {
   Send,
   History,
 } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface Contact {
   id: string;
@@ -54,6 +55,7 @@ interface Contact {
   email_clicks: number | null;
   engagement_score: number | null;
   created_time: string | null;
+  modified_time?: string | null;
 }
 
 interface ContactDetailModalProps {
@@ -122,39 +124,43 @@ export const ContactDetailModal = ({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <User className="h-6 w-6 text-primary" />
+              <div>
+                <DialogTitle className="text-xl flex items-center gap-2">
+                  <User className="h-5 w-5" />
+                  {contact.contact_name}
+                </DialogTitle>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                  {contact.position && <span>{contact.position}</span>}
+                  {contact.position && contact.company_name && <span>at</span>}
+                  {contact.company_name && (
+                    <span className="font-medium">{contact.company_name}</span>
+                  )}
                 </div>
-                <div>
-                  <DialogTitle className="text-xl">{contact.contact_name}</DialogTitle>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    {contact.position && <span>{contact.position}</span>}
-                    {contact.position && contact.company_name && <span>at</span>}
-                    {contact.company_name && (
-                      <span className="font-medium">{contact.company_name}</span>
-                    )}
-                  </div>
+                <div className="flex items-center gap-2 mt-2">
+                  {contact.score !== null && (
+                    <Badge className={`${getScoreColor(contact.score)} border`}>
+                      Score: {contact.score}
+                    </Badge>
+                  )}
+                  {contact.segment && (
+                    <Badge variant="outline" className="capitalize">
+                      {contact.segment}
+                    </Badge>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {contact.score !== null && (
-                  <div className="text-center">
-                    <div className={`text-2xl font-bold ${getScoreColor(contact.score)}`}>
-                      {contact.score}
-                    </div>
-                    <div className="text-xs text-muted-foreground">Score</div>
-                  </div>
-                )}
-                {contact.segment && (
-                  <Badge variant="outline" className="capitalize">
-                    {contact.segment}
-                  </Badge>
-                )}
-              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowActivityLogModal(true)}
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Log Activity
+              </Button>
             </div>
           </DialogHeader>
 
@@ -266,6 +272,22 @@ export const ContactDetailModal = ({
                   </div>
                 </>
               )}
+
+              {/* Timestamps */}
+              <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2">
+                {contact.created_time && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Created: {format(new Date(contact.created_time), 'dd/MM/yyyy')}
+                  </span>
+                )}
+                {contact.modified_time && (
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Updated: {format(new Date(contact.modified_time), 'dd/MM/yyyy')}
+                  </span>
+                )}
+              </div>
             </TabsContent>
 
             <TabsContent value="activity" className="mt-4">
