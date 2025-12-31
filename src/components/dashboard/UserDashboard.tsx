@@ -1690,7 +1690,7 @@ const UserDashboard = () => {
   return (
     <div className="h-full flex flex-col overflow-hidden" ref={containerRef}>
       {/* Header with Search - Fixed at top */}
-      <div className="flex-shrink-0 flex items-center justify-between flex-wrap gap-2 bg-background py-4 px-2 sm:px-4 border-b border-border/50">
+      <div className="flex-shrink-0 flex items-center justify-between flex-wrap gap-1 bg-background py-1 px-1 sm:px-2">
         <div className="min-w-0 flex-1 max-w-sm">
           <GlobalSearch />
         </div>
