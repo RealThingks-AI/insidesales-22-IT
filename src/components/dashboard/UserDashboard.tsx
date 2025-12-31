@@ -8,6 +8,7 @@ import {
   Users, FileText, Briefcase, Plus, Settings2, Calendar, Activity, Bell, 
   Mail, Building2, ListTodo, CalendarClock, ClipboardList, Check, X, TrendingUp, TrendingDown, Minus, User
 } from "lucide-react";
+import { GlobalSearch } from "@/components/shared/GlobalSearch";
 import { Switch } from "@/components/ui/switch";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -1688,12 +1689,10 @@ const UserDashboard = () => {
 
   return (
     <div className="px-2 sm:px-4 py-4 space-y-4 w-full overflow-x-hidden" ref={containerRef}>
-      {/* Welcome Header */}
+      {/* Header with Search */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground truncate">
-            Welcome back{userName ? `, ${userName}` : ''}!
-          </h1>
+        <div className="min-w-0 flex-1 max-w-sm">
+          <GlobalSearch />
         </div>
         <div className="flex gap-2 flex-shrink-0 items-center">
           {isResizeMode ? (

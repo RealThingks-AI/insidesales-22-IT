@@ -142,6 +142,246 @@ export type Database = {
         }
         Relationships: []
       }
+      announcement_dismissals: {
+        Row: {
+          announcement_id: string | null
+          dismissed_at: string | null
+          id: string
+          user_id: string
+        }
+        Insert: {
+          announcement_id?: string | null
+          dismissed_at?: string | null
+          id?: string
+          user_id: string
+        }
+        Update: {
+          announcement_id?: string | null
+          dismissed_at?: string | null
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "announcement_dismissals_announcement_id_fkey"
+            columns: ["announcement_id"]
+            isOneToOne: false
+            referencedRelation: "announcements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      announcements: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          is_active: boolean | null
+          message: string
+          priority: string | null
+          starts_at: string | null
+          target_roles: string[] | null
+          title: string
+          type: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          message: string
+          priority?: string | null
+          starts_at?: string | null
+          target_roles?: string[] | null
+          title: string
+          type?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          message?: string
+          priority?: string | null
+          starts_at?: string | null
+          target_roles?: string[] | null
+          title?: string
+          type?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      approval_actions: {
+        Row: {
+          acted_at: string | null
+          action: string
+          approver_id: string
+          comments: string | null
+          id: string
+          request_id: string | null
+          step_number: number
+        }
+        Insert: {
+          acted_at?: string | null
+          action: string
+          approver_id: string
+          comments?: string | null
+          id?: string
+          request_id?: string | null
+          step_number: number
+        }
+        Update: {
+          acted_at?: string | null
+          action?: string
+          approver_id?: string
+          comments?: string | null
+          id?: string
+          request_id?: string | null
+          step_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approval_actions_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "approval_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      approval_requests: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          current_step: number | null
+          entity_id: string
+          entity_type: string
+          id: string
+          status: string | null
+          submitted_at: string | null
+          submitted_by: string | null
+          updated_at: string | null
+          workflow_id: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          current_step?: number | null
+          entity_id: string
+          entity_type: string
+          id?: string
+          status?: string | null
+          submitted_at?: string | null
+          submitted_by?: string | null
+          updated_at?: string | null
+          workflow_id?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          current_step?: number | null
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          status?: string | null
+          submitted_at?: string | null
+          submitted_by?: string | null
+          updated_at?: string | null
+          workflow_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approval_requests_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "approval_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      approval_workflows: {
+        Row: {
+          approval_steps: Json
+          created_at: string | null
+          created_by: string | null
+          entity_type: string
+          id: string
+          is_enabled: boolean | null
+          name: string
+          trigger_conditions: Json | null
+          updated_at: string | null
+        }
+        Insert: {
+          approval_steps: Json
+          created_at?: string | null
+          created_by?: string | null
+          entity_type: string
+          id?: string
+          is_enabled?: boolean | null
+          name: string
+          trigger_conditions?: Json | null
+          updated_at?: string | null
+        }
+        Update: {
+          approval_steps?: Json
+          created_at?: string | null
+          created_by?: string | null
+          entity_type?: string
+          id?: string
+          is_enabled?: boolean | null
+          name?: string
+          trigger_conditions?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      backup_schedules: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          day_of_week: number | null
+          frequency: string
+          id: string
+          is_enabled: boolean | null
+          last_run_at: string | null
+          next_run_at: string | null
+          retention_days: number | null
+          time_of_day: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          day_of_week?: number | null
+          frequency?: string
+          id?: string
+          is_enabled?: boolean | null
+          last_run_at?: string | null
+          next_run_at?: string | null
+          retention_days?: number | null
+          time_of_day?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          day_of_week?: number | null
+          frequency?: string
+          id?: string
+          is_enabled?: boolean | null
+          last_run_at?: string | null
+          next_run_at?: string | null
+          retention_days?: number | null
+          time_of_day?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       backups: {
         Row: {
           backup_type: string
@@ -181,6 +421,48 @@ export type Database = {
           size_bytes?: number | null
           status?: string
           tables_count?: number | null
+        }
+        Relationships: []
+      }
+      branding_settings: {
+        Row: {
+          accent_color: string | null
+          app_name: string | null
+          created_at: string | null
+          custom_css: string | null
+          favicon_url: string | null
+          font_family: string | null
+          id: string
+          logo_url: string | null
+          primary_color: string | null
+          secondary_color: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          accent_color?: string | null
+          app_name?: string | null
+          created_at?: string | null
+          custom_css?: string | null
+          favicon_url?: string | null
+          font_family?: string | null
+          id?: string
+          logo_url?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          accent_color?: string | null
+          app_name?: string | null
+          created_at?: string | null
+          custom_css?: string | null
+          favicon_url?: string | null
+          font_family?: string | null
+          id?: string
+          logo_url?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -609,6 +891,7 @@ export type Database = {
           clicked_at: string | null
           contact_id: string | null
           created_at: string
+          delivered_at: string | null
           id: string
           lead_id: string | null
           open_count: number | null
@@ -629,6 +912,7 @@ export type Database = {
           clicked_at?: string | null
           contact_id?: string | null
           created_at?: string
+          delivered_at?: string | null
           id?: string
           lead_id?: string | null
           open_count?: number | null
@@ -649,6 +933,7 @@ export type Database = {
           clicked_at?: string | null
           contact_id?: string | null
           created_at?: string
+          delivered_at?: string | null
           id?: string
           lead_id?: string | null
           open_count?: number | null
@@ -1300,6 +1585,57 @@ export type Database = {
           id?: string
           phone?: string | null
           timezone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      report_schedules: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          day_of_month: number | null
+          day_of_week: number | null
+          filters: Json | null
+          frequency: string
+          id: string
+          is_enabled: boolean | null
+          last_sent_at: string | null
+          name: string
+          recipients: Json | null
+          report_type: string
+          time_of_day: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          day_of_month?: number | null
+          day_of_week?: number | null
+          filters?: Json | null
+          frequency?: string
+          id?: string
+          is_enabled?: boolean | null
+          last_sent_at?: string | null
+          name: string
+          recipients?: Json | null
+          report_type: string
+          time_of_day?: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          day_of_month?: number | null
+          day_of_week?: number | null
+          filters?: Json | null
+          frequency?: string
+          id?: string
+          is_enabled?: boolean | null
+          last_sent_at?: string | null
+          name?: string
+          recipients?: Json | null
+          report_type?: string
+          time_of_day?: string
           updated_at?: string | null
         }
         Relationships: []
