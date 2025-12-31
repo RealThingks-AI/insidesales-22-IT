@@ -21,7 +21,6 @@ interface AccountColumnCustomizerProps {
   isSaving?: boolean;
 }
 
-// Updated default columns with new score, segment, revenue, counts columns
 export const defaultAccountColumns: AccountColumnConfig[] = [
   { field: 'company_name', label: 'Company Name', visible: true, order: 0 },
   { field: 'email', label: 'Email', visible: true, order: 1 },
@@ -30,15 +29,10 @@ export const defaultAccountColumns: AccountColumnConfig[] = [
   { field: 'tags', label: 'Tags', visible: true, order: 4 },
   { field: 'country', label: 'Country', visible: true, order: 5 },
   { field: 'status', label: 'Status', visible: true, order: 6 },
-  { field: 'website', label: 'Website', visible: false, order: 7 },
+  { field: 'website', label: 'Website', visible: true, order: 7 },
   { field: 'region', label: 'Region', visible: false, order: 8 },
   { field: 'phone', label: 'Phone', visible: false, order: 9 },
   { field: 'account_owner', label: 'Account Owner', visible: true, order: 10 },
-  { field: 'score', label: 'Score', visible: false, order: 11 },
-  { field: 'segment', label: 'Segment', visible: false, order: 12 },
-  { field: 'total_revenue', label: 'Total Revenue', visible: false, order: 13 },
-  { field: 'deal_count', label: 'Deals', visible: false, order: 14 },
-  { field: 'contact_count', label: 'Contacts', visible: false, order: 15 },
 ];
 
 export const AccountColumnCustomizer = ({
@@ -51,16 +45,9 @@ export const AccountColumnCustomizer = ({
 }: AccountColumnCustomizerProps) => {
   const [localColumns, setLocalColumns] = useState<AccountColumnConfig[]>(columns);
 
-  // Sync local columns when props change, merging new columns if they don't exist
+  // Sync local columns when props change
   useEffect(() => {
-    const existingFields = new Set(columns.map(c => c.field));
-    const missingColumns = defaultAccountColumns.filter(dc => !existingFields.has(dc.field));
-    
-    if (missingColumns.length > 0) {
-      setLocalColumns([...columns, ...missingColumns]);
-    } else {
-      setLocalColumns(columns);
-    }
+    setLocalColumns(columns);
   }, [columns]);
 
   const handleToggleColumn = (field: string, visible: boolean) => {

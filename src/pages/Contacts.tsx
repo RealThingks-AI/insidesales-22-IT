@@ -1,29 +1,26 @@
-import { ContactTable, ContactTableRef } from "@/components/ContactTable";
+import { ContactTable } from "@/components/ContactTable";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Settings, Trash2, Upload, Download, Mail, Plus, Columns } from "lucide-react";
+import { Settings, MoreVertical, Upload, Plus, Trash2, Download, Mail } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useSimpleContactsImportExport } from "@/hooks/useSimpleContactsImportExport";
+import { useCRUDAudit } from "@/hooks/useCRUDAudit";
 import { BulkEmailModal, BulkEmailRecipient } from "@/components/BulkEmailModal";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 const Contacts = () => {
   const { toast } = useToast();
+  const { logBulkDelete } = useCRUDAudit();
   const [showColumnCustomizer, setShowColumnCustomizer] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showBulkEmailModal, setShowBulkEmailModal] = useState(false);
   const [bulkEmailRecipients, setBulkEmailRecipients] = useState<BulkEmailRecipient[]>([]);
-  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Ref to call bulk delete from ContactTable
-  const contactTableRef = useRef<ContactTableRef>(null);
 
   const onRefresh = () => {
     setRefreshTrigger(prev => prev + 1);
@@ -48,17 +45,26 @@ const Contacts = () => {
     }
   };
 
-  const handleBulkDeleteClick = () => {
+  const handleBulkDelete = async () => {
     if (selectedContacts.length === 0) return;
-    setShowBulkDeleteDialog(true);
-  };
+    try {
+      const { error } = await supabase.from('contacts').delete().in('id', selectedContacts);
+      if (error) throw error;
 
-  // Execute bulk delete via ContactTable ref
-  const executeBulkDelete = async () => {
-    if (contactTableRef.current) {
-      await contactTableRef.current.handleBulkDelete();
+      await logBulkDelete('contacts', selectedContacts.length, selectedContacts);
+      toast({
+        title: "Success",
+        description: `${selectedContacts.length} contacts deleted successfully`
+      });
+      setSelectedContacts([]);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete contacts",
+        variant: "destructive"
+      });
     }
-    setShowBulkDeleteDialog(false);
   };
 
   const handleBulkEmailClick = async () => {
@@ -96,7 +102,7 @@ const Contacts = () => {
         <div className="px-6 h-16 flex items-center border-b w-full">
           <div className="flex items-center justify-between w-full">
             <div className="min-w-0 flex-1">
-              <h1 className="text-xl sm:text-2xl text-foreground font-semibold">Contacts</h1>
+              <h1 className="text-2xl text-foreground font-semibold">Contacts</h1>
             </div>
             <div className="flex items-center gap-3">
               {selectedContacts.length > 0 && (
@@ -116,7 +122,7 @@ const Contacts = () => {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="outline" size="icon" onClick={handleBulkDeleteClick}>
+                        <Button variant="outline" size="icon" onClick={handleBulkDelete}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </TooltipTrigger>
@@ -134,14 +140,14 @@ const Contacts = () => {
                     Actions
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48 bg-popover">
+                <DropdownMenuContent>
                   <DropdownMenuItem onClick={() => setShowColumnCustomizer(true)}>
-                    <Columns className="w-4 h-4 mr-2" />
+                    <Settings className="w-4 h-4 mr-2" />
                     Columns
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleImportClick} disabled={isImporting}>
                     <Upload className="w-4 h-4 mr-2" />
-                    {isImporting ? 'Importing...' : 'Import CSV'}
+                    Import CSV
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleExport}>
                     <Download className="w-4 h-4 mr-2" />
@@ -151,19 +157,16 @@ const Contacts = () => {
                     <Mail className="w-4 h-4 mr-2" />
                     Send Bulk Email ({selectedContacts.length})
                   </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={handleBulkDeleteClick} 
-                    disabled={selectedContacts.length === 0}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete Selected ({selectedContacts.length})
-                  </DropdownMenuItem>
+                  {selectedContacts.length > 0 && (
+                    <DropdownMenuItem onClick={handleBulkDelete} className="text-destructive focus:text-destructive">
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Selected ({selectedContacts.length})
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <Button size="sm" onClick={() => setShowModal(true)}>
-                <Plus className="h-4 w-4 mr-1" />
+              <Button variant="outline" size="sm" onClick={() => setShowModal(true)}>
                 Add Contact
               </Button>
             </div>
@@ -184,39 +187,15 @@ const Contacts = () => {
       {/* Main Content Area */}
       <div className="flex-1 min-h-0 overflow-auto px-4 pt-2 pb-4">
         <ContactTable 
-          ref={contactTableRef}
           showColumnCustomizer={showColumnCustomizer} 
           setShowColumnCustomizer={setShowColumnCustomizer} 
           showModal={showModal} 
           setShowModal={setShowModal} 
           selectedContacts={selectedContacts} 
           setSelectedContacts={setSelectedContacts} 
-          refreshTrigger={refreshTrigger}
-          onBulkDeleteComplete={() => {
-            setSelectedContacts([]);
-            setRefreshTrigger(prev => prev + 1);
-            setShowBulkDeleteDialog(false);
-          }}
+          refreshTrigger={refreshTrigger} 
         />
       </div>
-
-      {/* Bulk Delete Confirmation Dialog */}
-      <AlertDialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {selectedContacts.length} contacts?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the selected contacts.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={executeBulkDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Bulk Email Modal */}
       <BulkEmailModal

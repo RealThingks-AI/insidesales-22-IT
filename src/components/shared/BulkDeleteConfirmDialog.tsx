@@ -15,7 +15,6 @@ interface BulkDeleteConfirmDialogProps {
   onConfirm: () => void;
   count: number;
   itemType?: string;
-  loading?: boolean;
 }
 
 export const BulkDeleteConfirmDialog = ({
@@ -24,7 +23,6 @@ export const BulkDeleteConfirmDialog = ({
   onConfirm,
   count,
   itemType = "items",
-  loading = false,
 }: BulkDeleteConfirmDialogProps) => {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -37,13 +35,12 @@ export const BulkDeleteConfirmDialog = ({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
-            disabled={loading}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            {loading ? 'Deleting...' : `Delete ${count} ${itemType}`}
+            Delete {count} {itemType}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

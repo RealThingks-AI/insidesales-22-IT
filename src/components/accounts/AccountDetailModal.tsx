@@ -67,25 +67,12 @@ export const AccountDetailModal = ({ open, onOpenChange, account, onUpdate }: Ac
     onUpdate?.();
   };
 
-  // Match status colors with AccountTable.tsx
   const getStatusColor = (status: string | null) => {
-    switch (status) {
-      case 'Hot':
-        return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800';
-      case 'Warm':
-        return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 border border-orange-200 dark:border-orange-800';
-      case 'Working':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800';
-      case 'Nurture':
-        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-200 dark:border-purple-800';
-      case 'Closed-Won':
-        return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800';
-      case 'Closed-Lost':
-        return 'bg-gray-100 text-gray-600 dark:bg-gray-800/50 dark:text-gray-400 border border-gray-200 dark:border-gray-700';
-      case 'New':
-        return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-800';
-      default:
-        return 'bg-muted text-muted-foreground border border-border';
+    switch (status?.toLowerCase()) {
+      case 'active': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+      case 'inactive': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+      case 'new': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
     }
   };
 
