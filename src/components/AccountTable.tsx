@@ -150,6 +150,7 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [viewingAccount, setViewingAccount] = useState<Account | null>(null);
+  const [detailModalDefaultTab, setDetailModalDefaultTab] = useState("overview");
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskAccountId, setTaskAccountId] = useState<string | null>(null);
@@ -559,6 +560,7 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
                     {visibleColumns.map(column => <TableCell key={column.field} className={`${column.field === 'company_name' || column.field === 'email' ? 'text-left' : 'text-center'} px-4 py-3 align-middle whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]`}>
                         {column.field === 'company_name' ? <button onClick={() => {
                     setViewingAccount(account);
+                    setDetailModalDefaultTab("overview");
                     setShowDetailModal(true);
                   }} className="text-primary hover:underline font-medium text-left truncate">
                               <HighlightedText text={account.company_name} highlight={searchTerm} />
@@ -575,11 +577,38 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
                               <span className="text-center text-muted-foreground w-full block">-</span>
                             )
                           ) : column.field === 'deal_count' ? (
-                            <span className="text-center w-full block">{account.deal_count ?? 0}</span>
+                            <button 
+                              onClick={() => {
+                                setViewingAccount(account);
+                                setDetailModalDefaultTab("associations");
+                                setShowDetailModal(true);
+                              }}
+                              className="text-center w-full block text-primary hover:underline cursor-pointer"
+                            >
+                              {account.deal_count ?? 0}
+                            </button>
                           ) : column.field === 'contact_count' ? (
-                            <span className="text-center w-full block">{account.contact_count ?? 0}</span>
+                            <button 
+                              onClick={() => {
+                                setViewingAccount(account);
+                                setDetailModalDefaultTab("associations");
+                                setShowDetailModal(true);
+                              }}
+                              className="text-center w-full block text-primary hover:underline cursor-pointer"
+                            >
+                              {account.contact_count ?? 0}
+                            </button>
                           ) : column.field === 'lead_count' ? (
-                            <span className="text-center w-full block">{account.lead_count ?? 0}</span>
+                            <button 
+                              onClick={() => {
+                                setViewingAccount(account);
+                                setDetailModalDefaultTab("associations");
+                                setShowDetailModal(true);
+                              }}
+                              className="text-center w-full block text-primary hover:underline cursor-pointer"
+                            >
+                              {account.lead_count ?? 0}
+                            </button>
                           ) : column.field === 'tags' ? (account.tags && account.tags.length > 0 ? <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -718,11 +747,21 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
       setAccountToDelete(null);
     }} isMultiple={false} count={1} />
 
-      <AccountDetailModal open={showDetailModal} onOpenChange={setShowDetailModal} account={viewingAccount} onUpdate={fetchAccounts} onEdit={account => {
-      setShowDetailModal(false);
-      setEditingAccount(account);
-      setShowModal(true);
-    }} />
+      <AccountDetailModal 
+        open={showDetailModal} 
+        onOpenChange={(open) => {
+          setShowDetailModal(open);
+          if (!open) setDetailModalDefaultTab("overview");
+        }} 
+        account={viewingAccount} 
+        onUpdate={fetchAccounts} 
+        onEdit={account => {
+          setShowDetailModal(false);
+          setEditingAccount(account);
+          setShowModal(true);
+        }}
+        defaultTab={detailModalDefaultTab}
+      />
 
       <TaskModal
         open={taskModalOpen}

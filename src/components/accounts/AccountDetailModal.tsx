@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -48,11 +48,17 @@ interface AccountDetailModalProps {
   account: Account | null;
   onUpdate?: () => void;
   onEdit?: (account: Account) => void;
+  defaultTab?: string;
 }
 
-export const AccountDetailModal = ({ open, onOpenChange, account, onUpdate, onEdit }: AccountDetailModalProps) => {
+export const AccountDetailModal = ({ open, onOpenChange, account, onUpdate, onEdit, defaultTab = "overview" }: AccountDetailModalProps) => {
   const [showActivityLog, setShowActivityLog] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [activeTab, setActiveTab] = useState(defaultTab);
+  // Update activeTab when defaultTab prop changes
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [defaultTab, open]);
 
   if (!account) return null;
 
@@ -103,7 +109,7 @@ export const AccountDetailModal = ({ open, onOpenChange, account, onUpdate, onEd
             </div>
           </DialogHeader>
 
-          <Tabs defaultValue="overview" className="w-full">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="tasks" className="flex items-center gap-1">
