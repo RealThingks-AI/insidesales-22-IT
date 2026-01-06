@@ -482,7 +482,7 @@ const LeadTable = forwardRef<LeadTableRef, LeadTableProps>(({
 
   const { displayNames } = useUserDisplayNames(ownerIds);
   
-  const visibleColumns = localColumns.filter(col => col.visible);
+  const visibleColumns = localColumns.filter(col => col.visible).sort((a, b) => a.order - b.order);
   const pageLeads = getCurrentPageLeads();
 
   // Check if any filters are active
