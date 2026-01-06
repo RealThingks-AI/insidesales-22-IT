@@ -29,6 +29,7 @@ import { ClearFiltersButton } from "./shared/ClearFiltersButton";
 import { TableSkeleton } from "./shared/Skeletons";
 import { useTasks } from "@/hooks/useTasks";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { moveFieldToEnd } from "@/utils/columnOrderUtils";
 
 // Export ref interface for parent component
 export interface ContactTableRef {
@@ -469,7 +470,10 @@ export const ContactTable = forwardRef<ContactTableRef, ContactTableProps>(({
     setShowDetailModal(true);
   };
 
-  const visibleColumns = localColumns.filter(col => col.visible).sort((a, b) => a.order - b.order);
+  const visibleColumns = moveFieldToEnd(
+    localColumns.filter((col) => col.visible).sort((a, b) => a.order - b.order),
+    "contact_owner",
+  );
   const totalPages = Math.ceil(filteredContacts.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const pageContacts = filteredContacts.slice(startIndex, startIndex + itemsPerPage);

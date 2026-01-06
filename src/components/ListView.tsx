@@ -25,6 +25,7 @@ import { DeleteConfirmDialog } from "./shared/DeleteConfirmDialog";
 import { ClearFiltersButton } from "./shared/ClearFiltersButton";
 import { HighlightedText } from "./shared/HighlightedText";
 import { useUserDisplayNames } from "@/hooks/useUserDisplayNames";
+import { moveFieldToEnd } from "@/utils/columnOrderUtils";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
@@ -392,9 +393,10 @@ export const ListView = ({
     return [];
   };
 
-  const visibleColumns = localColumns
-    .filter(col => col.visible)
-    .sort((a, b) => a.order - b.order);
+  const visibleColumns = moveFieldToEnd(
+    localColumns.filter((col) => col.visible).sort((a, b) => a.order - b.order),
+    "lead_owner",
+  );
 
   // Generate available options for multi-select filters
   const availableOptions = useMemo(() => {
