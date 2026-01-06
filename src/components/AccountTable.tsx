@@ -434,7 +434,7 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
   const {
     displayNames
   } = useUserDisplayNames(ownerIds);
-  const visibleColumns = localColumns.filter(col => col.visible);
+  const visibleColumns = localColumns.filter(col => col.visible).sort((a, b) => a.order - b.order);
   const pageAccounts = getCurrentPageAccounts();
 
   // Check if any filters are active

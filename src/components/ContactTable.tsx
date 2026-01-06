@@ -469,7 +469,7 @@ export const ContactTable = forwardRef<ContactTableRef, ContactTableProps>(({
     setShowDetailModal(true);
   };
 
-  const visibleColumns = localColumns.filter(col => col.visible);
+  const visibleColumns = localColumns.filter(col => col.visible).sort((a, b) => a.order - b.order);
   const totalPages = Math.ceil(filteredContacts.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const pageContacts = filteredContacts.slice(startIndex, startIndex + itemsPerPage);
