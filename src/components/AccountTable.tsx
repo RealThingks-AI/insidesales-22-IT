@@ -22,6 +22,7 @@ import { AccountDeleteConfirmDialog } from "./AccountDeleteConfirmDialog";
 import { AccountDetailModal } from "./accounts/AccountDetailModal";
 import { HighlightedText } from "./shared/HighlightedText";
 import { getAccountStatusColor } from "@/utils/accountStatusUtils";
+import { moveFieldToEnd } from "@/utils/columnOrderUtils";
 import { ClearFiltersButton } from "./shared/ClearFiltersButton";
 import { TableSkeleton } from "./shared/Skeletons";
 import { TaskModal } from "./tasks/TaskModal";
@@ -434,7 +435,10 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
   const {
     displayNames
   } = useUserDisplayNames(ownerIds);
-  const visibleColumns = localColumns.filter(col => col.visible).sort((a, b) => a.order - b.order);
+  const visibleColumns = moveFieldToEnd(
+    localColumns.filter((col) => col.visible).sort((a, b) => a.order - b.order),
+    "account_owner",
+  );
   const pageAccounts = getCurrentPageAccounts();
 
   // Check if any filters are active
