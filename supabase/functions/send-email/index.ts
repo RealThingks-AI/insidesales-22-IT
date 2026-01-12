@@ -295,16 +295,17 @@ const handler = async (req: Request): Promise<Response> => {
     // Send email via Microsoft Graph API with tracking pixel and click tracking
     await sendEmail(accessToken, { to, subject, body, toName, from, attachments }, emailRecord.id);
 
-    // Update email history to mark as delivered
+    // Update email history to mark as sent (NOT delivered - we can't confirm delivery)
+    // Email will transition to "opened" when tracking pixel loads, or "bounced" if NDR detected
     await supabase
       .from("email_history")
       .update({ 
-        status: "delivered",
-        delivered_at: new Date().toISOString()
+        status: "sent",
+        is_valid_open: true
       })
       .eq("id", emailRecord.id);
 
-    console.log(`Email marked as delivered for record: ${emailRecord.id}`);
+    console.log(`Email marked as sent for record: ${emailRecord.id}`);
 
     return new Response(
       JSON.stringify({ 
