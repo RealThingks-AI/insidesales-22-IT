@@ -937,12 +937,17 @@ export type Database = {
         Row: {
           account_id: string | null
           body: string | null
+          bounce_reason: string | null
+          bounce_type: string | null
+          bounced_at: string | null
           click_count: number | null
           clicked_at: string | null
           contact_id: string | null
           created_at: string
           delivered_at: string | null
+          first_open_ip: string | null
           id: string
+          is_valid_open: boolean | null
           lead_id: string | null
           open_count: number | null
           opened_at: string | null
@@ -953,17 +958,23 @@ export type Database = {
           sent_by: string | null
           status: string
           subject: string
+          unique_opens: number | null
           updated_at: string
         }
         Insert: {
           account_id?: string | null
           body?: string | null
+          bounce_reason?: string | null
+          bounce_type?: string | null
+          bounced_at?: string | null
           click_count?: number | null
           clicked_at?: string | null
           contact_id?: string | null
           created_at?: string
           delivered_at?: string | null
+          first_open_ip?: string | null
           id?: string
+          is_valid_open?: boolean | null
           lead_id?: string | null
           open_count?: number | null
           opened_at?: string | null
@@ -974,17 +985,23 @@ export type Database = {
           sent_by?: string | null
           status?: string
           subject: string
+          unique_opens?: number | null
           updated_at?: string
         }
         Update: {
           account_id?: string | null
           body?: string | null
+          bounce_reason?: string | null
+          bounce_type?: string | null
+          bounced_at?: string | null
           click_count?: number | null
           clicked_at?: string | null
           contact_id?: string | null
           created_at?: string
           delivered_at?: string | null
+          first_open_ip?: string | null
           id?: string
+          is_valid_open?: boolean | null
           lead_id?: string | null
           open_count?: number | null
           opened_at?: string | null
@@ -995,6 +1012,7 @@ export type Database = {
           sent_by?: string | null
           status?: string
           subject?: string
+          unique_opens?: number | null
           updated_at?: string
         }
         Relationships: [
