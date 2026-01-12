@@ -254,14 +254,17 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     // Create email history record first to get the ID for tracking
+    // Status starts as "sent" - will be updated to "delivered" after successful send
+    // or "bounced" if a bounce is detected
     const emailHistoryData: any = {
       recipient_email: to,
       recipient_name: toName || to,
       sender_email: from,
       subject: subject,
       body: body,
-      status: "sent",
+      status: "sent", // Keep as "sent" - delivery confirmation comes later
       sent_by: userId,
+      is_valid_open: true, // Default to true, will be set to false if bot detected
     };
 
     // Add entity references if provided
