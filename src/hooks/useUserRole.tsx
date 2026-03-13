@@ -15,9 +15,6 @@ export const useUserRole = () => {
     }
 
     try {
-      console.log('Fetching role for user:', user.email);
-      
-      // First check user_roles table (proper role storage)
       const { data: roleData, error } = await supabase
         .from('user_roles')
         .select('role')
@@ -26,18 +23,12 @@ export const useUserRole = () => {
       
       if (error) {
         console.error('Error fetching role from user_roles:', error);
-        // Fallback to user metadata
-        const role = user.user_metadata?.role || 'user';
-        console.log('User role from metadata (fallback):', role);
-        setUserRole(role);
+        setUserRole('user');
       } else if (roleData) {
-        console.log('User role from user_roles table:', roleData.role);
         setUserRole(roleData.role);
       } else {
-        // No role in table, check metadata
-        const role = user.user_metadata?.role || 'user';
-        console.log('User role from metadata:', role);
-        setUserRole(role);
+        // No role found in DB — default to 'user' (never trust client metadata)
+        setUserRole('user');
       }
     } catch (error) {
       console.error('Error in fetchUserRole:', error);
